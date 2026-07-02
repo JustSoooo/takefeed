@@ -13,7 +13,7 @@ from core.fetchers.base import FetchResult, MarketFetcher
 logger = logging.getLogger(__name__)
 
 
-def _retry(fn, max_retries=3, backoff_base=2, what=""):
+def retry_call(fn, max_retries=3, backoff_base=2, what=""):
     last_err = None
     for attempt in range(max_retries):
         try:
@@ -38,7 +38,7 @@ class USMarketFetcher(MarketFetcher):
         if cache_key in self._cache:
             return FetchResult(ok=True, data=self._cache[cache_key])
         try:
-            df = _retry(
+            df = retry_call(
                 lambda: yf.Ticker(symbol).history(period=period, auto_adjust=False),
                 self.max_retries, self.backoff_base, what=f"history({symbol})",
             )
@@ -61,7 +61,7 @@ class USMarketFetcher(MarketFetcher):
         if cache_key in self._cache:
             return FetchResult(ok=True, data=self._cache[cache_key])
         try:
-            df = _retry(
+            df = retry_call(
                 lambda: yf.download(symbols, period=period, auto_adjust=False, group_by="ticker", progress=False),
                 self.max_retries, self.backoff_base, what="multi-download",
             )

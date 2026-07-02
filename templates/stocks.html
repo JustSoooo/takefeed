@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}个股评分卡 · 监控 & 选股平台{% endblock %}
+{% block content %}
+
+{% if is_sample_data %}
+  <div class="section">
+    <span class="sample-data-tag">示例数据 · 非实时</span>
+  </div>
+{% endif %}
+
+{% for card in cards %}
+<section class="section">
+  <div class="section-label">{{ card.symbol }}　现价 {{ card.current_price }}</div>
+
+  {% if card.calendar_status == 'ok' and card.calendar.earnings_soon %}
+  <div class="state-note error-note" style="margin-bottom: var(--space-4);">
+    财报临近：{{ card.calendar.next_earnings_date }}（距今 {{ card.calendar.days_until }} 个交易日），注意仓位
+  </div>
+  {% endif %}
+
+  <div class="dim-grid">
+    <div class="dim-card {{ 'is-empty' if card.momentum_status == 'missing' else '' }}">
+      <div class="dim-card-head"><span class="dim-name">财务动量</span></div>
+      {% if card.momentum_status == 'ok' %}
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>营收环比</span><span>{{ card.momentum.revenue_qoq }}</span></div>
+          <div class="dim-detail-row"><span>营收同比</span><span>{{ card.momentum.revenue_yoy }}</span></div>
+          <div class="dim-detail-row"><span>最近一期是否超预期</span><span>{{ '是' if card.momentum.eps_beat == true else ('否' if card.momentum.eps_beat == false else '未知') }}</span></div>
+          <div class="dim-detail-row"><span>EPS 惊喜幅度</span><span>{{ card.momentum.eps_surprise }}</span></div>
+        </div>
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ card.momentum_note }}</div>
+      {% endif %}
+    </div>
+
+    <div class="dim-card {{ 'is-empty' if card.institutional_status == 'missing' else '' }}">
+      <div class="dim-card-head"><span class="dim-name">机构态度</span></div>
+      {% if card.institutional_status == 'ok' %}
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>目标价中位数</span><span>{{ card.institutional.median_target }}</span></div>
+          <div class="dim-detail-row"><span>较现价</span><span class="{{ card.institutional.upside_class }}">{{ card.institutional.upside }}</span></div>
+        </div>
+        {% if card.institutional.rating_changes %}
+        <table class="data-table" style="margin-top: var(--space-3);">
+          <thead><tr><th>日期</th><th>机构</th><th>动作</th></tr></thead>
+          <tbody>
+            {% for rc in card.institutional.rating_changes %}
+            <tr><td>{{ rc.date }}</td><td>{{ rc.firm }}</td><td>{{ rc.action }}（{{ rc.from_grade }} → {{ rc.to_grade }}）</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ card.institutional_note }}</div>
+      {% endif %}
+    </div>
+
+    <div class="dim-card {{ 'is-empty' if card.relative_strength_status == 'missing' else '' }}">
+      <div class="dim-card-head"><span class="dim-name">相对强度</span></div>
+      {% if card.relative_strength_status == 'ok' %}
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>基准板块</span><span>{{ card.relative_strength.sector_etf }}</span></div>
+          <div class="dim-detail-row"><span>近1月超额</span><span class="{{ card.relative_strength.excess_mid_class }}">{{ card.relative_strength.excess_mid }}</span></div>
+          <div class="dim-detail-row"><span>近3月超额</span><span class="{{ card.relative_strength.excess_long_class }}">{{ card.relative_strength.excess_long }}</span></div>
+        </div>
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ card.relative_strength_note }}</div>
+      {% endif %}
+    </div>
+
+    <div class="dim-card {{ 'is-empty' if card.calendar_status == 'missing' else '' }}">
+      <div class="dim-card-head"><span class="dim-name">事件日历</span></div>
+      {% if card.calendar_status == 'ok' %}
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>下次财报日期</span><span>{{ card.calendar.next_earnings_date }}</span></div>
+          <div class="dim-detail-row"><span>距今交易日</span><span>{{ card.calendar.days_until }}</span></div>
+        </div>
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ card.calendar_note }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top: var(--space-5);">舆情摘要（近7日新闻，利多/利空/中性 + 溯源）</div>
+  {% if card.news_status == 'missing' %}
+    <div class="state-note error-note">该维度今日数据缺失：{{ card.news_note }}</div>
+  {% elif not card.sentiment_items %}
+    <div class="state-note">近期无相关新闻</div>
+  {% else %}
+    <table class="data-table">
+      <thead><tr><th>标签</th><th>标题</th><th>来源</th><th>理由</th></tr></thead>
+      <tbody>
+        {% for item in card.sentiment_items %}
+        <tr>
+          <td class="{{ item.label_class }}">{{ item.label }}</td>
+          <td>{% if item.link %}<a href="{{ item.link }}" style="color: inherit;">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</td>
+          <td>{{ item.publisher or '-' }}</td>
+          <td>{{ item.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% endblock %}
