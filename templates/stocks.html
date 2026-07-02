@@ -79,6 +79,22 @@
         <div class="state-note error-note">该维度今日数据缺失：{{ card.calendar_note }}</div>
       {% endif %}
     </div>
+
+    {% if card.options_status != 'disabled' %}
+    <div class="dim-card {{ 'is-empty' if card.options_status == 'missing' else '' }}">
+      <div class="dim-card-head"><span class="dim-name">期权市场情绪</span></div>
+      {% if card.options_status == 'ok' %}
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>Put/Call 成交量比</span><span>{{ card.options.pc_ratio }}</span></div>
+          <div class="dim-detail-row"><span>ATM IV（近月）</span><span>{{ card.options.atm_iv }}</span></div>
+          <div class="dim-detail-row"><span>IV Rank（自行累积）</span><span>{{ card.options.iv_rank_str }}</span></div>
+          <div class="dim-detail-row"><span>总持仓量日变化</span><span class="{{ card.options.oi_change_class }}">{{ card.options.oi_change_str }}</span></div>
+        </div>
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ card.options_note }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="section-label" style="margin-top: var(--space-5);">舆情摘要（近7日新闻，利多/利空/中性 + 溯源）</div>

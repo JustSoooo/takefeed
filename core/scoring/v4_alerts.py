@@ -99,6 +99,60 @@ def check_news_spike(conn, run_date: str, symbol: str, today_count: int, lookbac
     return None
 
 
+def check_iv_jump(conn, run_date: str, symbol: str, today_atm_iv: float | None, threshold: float) -> Alert | None:
+    """IV 单日跳升 > threshold：市场可能在为该股定价某个事件（guidebook 5.4）。
+    对比对象是最近一个已落库的期权快照，无历史则跳过。"""
+    if today_atm_iv is None:
+        return None
+    history = dbmod.get_metric_history(conn, "v5", f"{symbol}::options_snapshot", before_date=run_date, limit=1)
+    if not history:
+        return None
+    prev_iv = history[0][1].get("atm_iv")
+    if not prev_iv:
+        return None
+    jump = today_atm_iv / prev_iv - 1
+    if jump > threshold:
+        return Alert(symbol, "iv_jump", "warning",
+                     f"ATM IV 单日跳升 {jump * 100:.0f}%（{prev_iv * 100:.1f}% → {today_atm_iv * 100:.1f}%），"
+                     f"市场可能在为某个事件定价")
+    return None
+
+
+def check_option_volume_anomaly(conn, run_date: str, symbol: str, today_volume: int, max_strike_share: float,
+                                 max_volume_strike, lookback_days: int, multiplier: float,
+                                 concentration_threshold: float, min_history: int) -> Alert | None:
+    """单日期权成交量 > N日均量 M 倍 且集中于单一行权价：异常大单活动（guidebook 5.4）。"""
+    history = dbmod.get_metric_history(conn, "v5", f"{symbol}::options_snapshot", before_date=run_date, limit=lookback_days)
+    volumes = [raw["total_volume"] for _, raw in history if raw.get("total_volume")]
+    if len(volumes) < min_history:
+        return None
+    avg = sum(volumes) / len(volumes)
+    if avg > 0 and today_volume > avg * multiplier and max_strike_share >= concentration_threshold:
+        strike_str = f"{max_volume_strike:g}" if max_volume_strike is not None else "未知"
+        return Alert(symbol, "option_volume_anomaly", "warning",
+                     f"期权成交量 {today_volume:,} 为近{lookback_days}日均量的 {today_volume / avg:.1f} 倍，"
+                     f"且 {max_strike_share:.0%} 集中于行权价 {strike_str}（异常大单活动）")
+    return None
+
+
+def generate_options_alerts(conn, run_date: str, symbol: str, options_block, v5_alerts_cfg: dict) -> list[Alert]:
+    """5.4 回填的两条期权预警。options_block 为 V3 卡上的期权情绪 Block，缺失时静默跳过。"""
+    if options_block is None or options_block.status != "ok":
+        return []
+    raw = options_block.raw
+    alerts = []
+    iv_alert = check_iv_jump(conn, run_date, symbol, raw.get("atm_iv"), v5_alerts_cfg["iv_jump_threshold"])
+    if iv_alert:
+        alerts.append(iv_alert)
+    vol_alert = check_option_volume_anomaly(
+        conn, run_date, symbol, raw.get("total_volume", 0), raw.get("max_strike_volume_share", 0.0),
+        raw.get("max_volume_strike"), v5_alerts_cfg["volume_lookback_days"], v5_alerts_cfg["volume_multiplier"],
+        v5_alerts_cfg["strike_concentration_threshold"], v5_alerts_cfg["volume_min_history"])
+    if vol_alert:
+        alerts.append(vol_alert)
+    return alerts
+
+
 def generate_alerts_for_symbol(fetcher: USMarketFetcher, symbol: str, v3_card: dict, conn, run_date: str, cfg: dict) -> list[Alert]:
     period = cfg["price_history_period"]
     alerts = []

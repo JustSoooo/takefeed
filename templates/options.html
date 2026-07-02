@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}期权分析 · {{ symbol }} · 监控 & 选股平台{% endblock %}
+{% block content %}
+
+{% if is_sample_data %}
+  <div class="section">
+    <span class="sample-data-tag">示例数据 · 非实时</span>
+  </div>
+{% endif %}
+
+{# 模型局限声明：固定展示，不可折叠（guidebook 5.6 硬性纪律） #}
+<section class="section" style="margin-bottom: var(--space-5);">
+  <div class="section-label">模型局限与免责（固定展示）</div>
+  {% for d in disclaimers %}
+  <div class="state-note" style="margin-bottom: var(--space-2);">{{ loop.index }}. {{ d }}</div>
+  {% endfor %}
+</section>
+
+{% if scenario and scenario.crosses_earnings %}
+<section class="section" style="margin-bottom: var(--space-5);">
+  <div class="state-note error-note" style="font-size: 14px;">
+    跨财报持仓，IV crush 风险：预期持有区间覆盖财报日 {{ scenario.next_earnings_date }}，
+    财报后隐含波动率大概率骤降，买方仓位可能在方向看对的情况下仍然亏损。
+  </div>
+</section>
+{% endif %}
+
+<section class="section">
+  <div class="section-label">标的概览</div>
+  <div class="dim-grid">
+    <div class="dim-card">
+      <div class="dim-card-head"><span class="dim-name">{{ symbol }}</span></div>
+      <div class="dim-detail">
+        <div class="dim-detail-row"><span>现价</span><span>{{ spot }}</span></div>
+        <div class="dim-detail-row"><span>分析视角</span><span>{{ view_label }}</span></div>
+        <div class="dim-detail-row"><span>无风险利率</span><span>{{ rate_str }}</span></div>
+      </div>
+      {% if rate_note %}<div class="state-note info-note" style="margin-top: var(--space-3);">{{ rate_note }}</div>{% endif %}
+    </div>
+    <div class="dim-card">
+      <div class="dim-card-head"><span class="dim-name">IV Rank（近1年百分位，自行累积）</span></div>
+      {% if iv_rank and iv_rank.status == 'ok' %}
+      <div class="dim-detail">
+        <div class="dim-detail-row"><span>IV Rank</span><span>{{ iv_rank.rank }}%</span></div>
+        <div class="dim-detail-row"><span>历史样本数</span><span>{{ iv_rank.samples }}</span></div>
+      </div>
+      {% else %}
+      <div class="state-note info-note">历史样本不足（{{ iv_rank.samples if iv_rank else 0 }}/{{ iv_rank.required if iv_rank else '-' }}），
+        系统按日累积 ATM IV，样本达标后自动启用</div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-label">IV 期限结构（各到期日 ATM IV，近月被抬高通常指向事件定价）</div>
+  <div class="chart-wrap">
+    <canvas id="termChart" height="70"></canvas>
+  </div>
+  <table class="data-table" style="margin-top: var(--space-4);">
+    <thead><tr><th>到期日</th><th>DTE</th><th>ATM IV</th><th>过流动性合约</th></tr></thead>
+    <tbody>
+      {% for row in expiry_summary %}
+      <tr>
+        <td>{{ row.expiry }}</td><td>{{ row.dte }}</td><td>{{ row.atm_iv_str }}</td>
+        <td>{{ row.liquid_count }} / {{ row.total_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="section">
+  <div class="section-label">期权链明细（近月，现价 ±15% 行权价区间，已应用流动性过滤）</div>
+  <div class="state-note info-note" style="margin-bottom: var(--space-3);">
+    流动性过滤（硬规则）：OI ≥ {{ liq_cfg.min_open_interest }}、当日成交量 ≥ {{ liq_cfg.min_volume }}、
+    买卖价差 ≤ 中间价 {{ (liq_cfg.max_spread_over_mid * 100) | round(0) | int }}%。
+    区间内另有 {{ hidden_count }} 个合约未通过过滤被隐藏。
+  </div>
+  <table class="data-table">
+    <thead><tr><th>到期日</th><th>类型</th><th>行权价</th><th>买价</th><th>卖价</th><th>中间价</th><th>量</th><th>OI</th><th>IV</th><th>Delta</th></tr></thead>
+    <tbody>
+      {% for q in chain_rows %}
+      <tr>
+        <td>{{ q.expiry }}</td><td>{{ q.kind }}</td><td>{{ q.strike }}</td>
+        <td>{{ q.bid }}</td><td>{{ q.ask }}</td><td>{{ q.mid }}</td>
+        <td>{{ q.volume }}</td><td>{{ q.oi }}</td><td>{{ q.iv_str }}</td><td>{{ q.delta_str }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if scenario %}
+<section class="section">
+  <div class="section-label">情景收益预估
+    {% if scenario_inputs %}（预期 {{ scenario_inputs.expected_date }} 到达 {{ scenario_inputs.expected_price }}，持仓：{{ scenario_inputs.position_desc }}）{% endif %}
+  </div>
+  <div class="dim-grid">
+    <div class="dim-card">
+      <div class="dim-card-head"><span class="dim-name">风险边界（到期口径）</span></div>
+      <div class="dim-detail">
+        <div class="dim-detail-row" style="font-size: 15px;"><span><strong>最大亏损</strong></span>
+          <span class="pct-negative" style="font-size: 18px; font-weight: 600;">{{ scenario.max_loss_str }}</span></div>
+        <div class="dim-detail-row"><span>最大盈利</span><span class="pct-positive">{{ scenario.max_gain_str }}</span></div>
+        <div class="dim-detail-row"><span>盈亏平衡点</span><span>{{ scenario.breakevens_str }}</span></div>
+        <div class="dim-detail-row"><span>建仓净成本（中间价）</span><span>{{ scenario.entry_cost_str }}</span></div>
+      </div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-card-head"><span class="dim-name">情景① IV 维持当前</span></div>
+      <div class="dim-detail">
+        <div class="dim-detail-row"><span>预期日盈亏（中途估值）</span>
+          <span class="{{ scenario.scenario_a_class }}" style="font-size: 16px;">{{ scenario.scenario_a_pnl_str }}</span></div>
+      </div>
+    </div>
+    <div class="dim-card {{ 'is-empty' if scenario.scenario_b.status != 'ok' else '' }}">
+      <div class="dim-card-head"><span class="dim-name">情景② IV 回落至近1年中位数</span></div>
+      {% if scenario.scenario_b.status == 'ok' %}
+      <div class="dim-detail">
+        <div class="dim-detail-row"><span>假设 IV</span><span>{{ scenario.scenario_b_iv_str }}</span></div>
+        <div class="dim-detail-row"><span>预期日盈亏（中途估值）</span>
+          <span class="{{ scenario.scenario_b_class }}" style="font-size: 16px;">{{ scenario.scenario_b_pnl_str }}</span></div>
+      </div>
+      {% else %}
+      <div class="state-note info-note">{{ scenario.scenario_b.note }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="chart-wrap" style="margin-top: var(--space-4);">
+    <canvas id="payoffChart" height="80"></canvas>
+    <div class="dim-percentile" style="margin-top: var(--space-2);">
+      到期 payoff，评估时点 {{ scenario.payoff_eval_date }}（多到期日组合以最早到期腿为评估时点，长腿按 BS 剩余价值计）
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top: var(--space-5);">敏感性矩阵（IV 维持当前；价格 ±5% × 日期 ±5 个交易日）</div>
+  <table class="data-table">
+    <thead><tr><th>估值日期 \ 标的价</th>
+      {% for p in scenario.sensitivity.prices %}<th>{{ p }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {% for row in scenario.sensitivity.rows %}
+      <tr><td>{{ row.date }}</td>
+        {% for cell in row.cells %}<td class="{{ cell.cls }}">{{ cell.pnl_str }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if matrix_rows %}
+<section class="section">
+  <div class="section-label">腿策略推荐矩阵（到期分桶 × 风险偏好 · 候选清单，非投资建议）</div>
+  {% for row in matrix_rows %}
+  <div style="margin-bottom: var(--space-5);">
+    <div class="dim-name" style="margin-bottom: var(--space-3);">{{ row.bucket_label }}
+      {% if row.is_zero_dte %}<span class="pct-negative" style="font-family: var(--font-mono); font-size: 12px; margin-left: var(--space-2);">整档高风险</span>{% endif %}
+    </div>
+    <div class="dim-grid">
+      {% for cell in row.cells %}
+      <div class="dim-card {{ 'is-empty' if cell.status != 'ok' else '' }}">
+        <div class="dim-card-head"><span class="dim-name">{{ cell.risk_label }}</span></div>
+        {% if cell.status == 'ok' %}
+          {% for rec in cell.recs %}
+          <div style="margin-bottom: var(--space-4); {% if not loop.first %}border-top: 1px solid var(--panel-border); padding-top: var(--space-3);{% endif %}">
+            <div style="font-weight: 600; margin-bottom: var(--space-2);">{{ rec.name }}</div>
+            <div class="dim-detail">
+              {% for leg in rec.legs %}
+              <div class="dim-detail-row"><span>腿 {{ loop.index }}</span><span>{{ leg }}</span></div>
+              {% endfor %}
+              <div class="dim-detail-row" style="font-size: 13px;"><span><strong>最大亏损</strong></span>
+                <span class="pct-negative" style="font-size: 15px; font-weight: 600;">{{ rec.max_loss_str }}</span></div>
+              <div class="dim-detail-row"><span>最大盈利</span><span class="pct-positive">{{ rec.max_gain_str }}</span></div>
+              <div class="dim-detail-row"><span>盈亏平衡</span><span>{{ rec.breakevens_str }}</span></div>
+              <div class="dim-detail-row"><span>净成本</span><span>{{ rec.cost_str }}</span></div>
+              <div class="dim-detail-row"><span>保证金估算</span><span>{{ rec.margin_str }}</span></div>
+            </div>
+            <div class="dim-percentile" style="margin-top: var(--space-2); line-height: 1.5;">{{ rec.reason }}</div>
+            {% if rec.direction_fit %}<div class="state-note info-note" style="margin-top: var(--space-2);">{{ rec.direction_fit }}</div>{% endif %}
+            {% if rec.extra_note %}<div class="state-note error-note" style="margin-top: var(--space-2);">{{ rec.extra_note }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        {% elif cell.status == 'refused' %}
+          <div class="state-note error-note">{{ cell.note }}</div>
+        {% else %}
+          <div class="state-note">{{ cell.note }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  const termData = {{ term_structure_json | safe }};
+  const termCtx = document.getElementById('termChart');
+  if (termCtx && termData.length) {
+    new Chart(termCtx, {
+      type: 'line',
+      data: {
+        labels: termData.map(d => d.expiry),
+        datasets: [{
+          label: 'ATM IV %',
+          data: termData.map(d => (d.atm_iv * 100).toFixed(1)),
+          borderColor: '#5b8def', backgroundColor: '#5b8def', pointRadius: 3, tension: 0,
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b93a1', font: { family: 'IBM Plex Mono' } }, grid: { color: '#1f242e' } },
+          y: { ticks: { color: '#8b93a1', font: { family: 'IBM Plex Mono' } }, grid: { color: '#1f242e' } },
+        },
+        animation: { duration: 0 },
+      }
+    });
+  }
+
+  {% if scenario %}
+  const payoffData = {{ scenario.payoff_json | safe }};
+  const payoffCtx = document.getElementById('payoffChart');
+  if (payoffCtx) {
+    new Chart(payoffCtx, {
+      type: 'line',
+      data: {
+        labels: payoffData.prices,
+        datasets: [{
+          label: '到期盈亏',
+          data: payoffData.pnl,
+          borderColor: '#5b8def',
+          pointRadius: 0,
+          tension: 0,
+          fill: {
+            target: { value: 0 },
+            above: 'rgba(61, 220, 132, 0.12)',
+            below: 'rgba(255, 92, 92, 0.12)',
+          },
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b93a1', font: { family: 'IBM Plex Mono' }, maxTicksLimit: 13 }, grid: { color: '#1f242e' } },
+          y: { ticks: { color: '#8b93a1', font: { family: 'IBM Plex Mono' } }, grid: { color: '#1f242e' } },
+        },
+        animation: { duration: 0 },
+      }
+    });
+  }
+  {% endif %}
+</script>
+
+{% endblock %}

@@ -59,6 +59,26 @@ def _build_card(card: dict) -> dict:
     out["news_status"] = news.status
     out["news_note"] = news.note if news.status == "missing" else None
 
+    opt = card.get("options_sentiment")
+    if opt is None:
+        out["options_status"] = "disabled"
+    elif opt.status == "ok":
+        raw = opt.raw
+        iv_rank = raw.get("iv_rank")
+        out["options_status"] = "ok"
+        out["options"] = {
+            "pc_ratio": f"{raw['pc_volume_ratio']:.2f}" if raw.get("pc_volume_ratio") is not None else "-",
+            "atm_iv": f"{raw['atm_iv'] * 100:.1f}%" if raw.get("atm_iv") is not None else "-",
+            "iv_rank_str": (f"{iv_rank['rank']:.0f}%" if iv_rank and iv_rank.get("status") == "ok"
+                            else f"历史不足({iv_rank['samples']}/{iv_rank['required']})" if iv_rank else "-"),
+            "oi_change_str": (fmt_pct(raw["oi_change_pct"]) if raw.get("oi_change_pct") is not None
+                              else "无前日基准"),
+            "oi_change_class": (pct_class(raw["oi_change_pct"]) if raw.get("oi_change_pct") is not None else "zero"),
+        }
+    else:
+        out["options_status"] = "missing"
+        out["options_note"] = opt.note
+
     sentiment_items = card.get("sentiment_items", [])
     out["sentiment_items"] = [
         {**item, "label_class": LABEL_CLASS.get(item["label"], "zero")} for item in sentiment_items
@@ -117,6 +137,19 @@ def build_v3_report_section(cards: list[dict]) -> str:
             lines.append(f"- 事件日历: 下次财报 {cal.raw['next_earnings_date']}，距今 {cal.raw['days_until']} 个交易日{warn}")
         else:
             lines.append(f"- 事件日历: 数据缺失（{cal.note}）")
+
+        opt = card.get("options_sentiment")
+        if opt is not None:
+            if opt.status == "ok":
+                raw = opt.raw
+                iv_rank = raw.get("iv_rank")
+                rank_str = (f"{iv_rank['rank']:.0f}%" if iv_rank and iv_rank.get("status") == "ok"
+                            else "历史不足" if iv_rank else "-")
+                pc_str = f"{raw['pc_volume_ratio']:.2f}" if raw.get("pc_volume_ratio") is not None else "-"
+                iv_str = f"{raw['atm_iv'] * 100:.1f}%" if raw.get("atm_iv") is not None else "-"
+                lines.append(f"- 期权市场情绪: P/C 成交量比 {pc_str}，ATM IV {iv_str}，IV Rank {rank_str}")
+            else:
+                lines.append(f"- 期权市场情绪: 数据缺失（{opt.note}）")
 
         sentiment_items = card.get("sentiment_items", [])
         if sentiment_items:

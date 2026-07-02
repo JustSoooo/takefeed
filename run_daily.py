@@ -81,10 +81,43 @@ def run_v2(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
     return section, {"matrix": matrix_result.raw, "health": health_results}
 
 
+def _attach_options_sentiment(card: dict, options_fetcher, conn, run_date: str, now_iso: str, cfg: dict) -> None:
+    """5.4 回填：为评分卡补充期权市场情绪（P/C 比、ATM IV、IV Rank、持仓量变化）。
+    快照按日落库，供 IV Rank 自行累积历史和 V4 的 IV/成交量异动预警使用。"""
+    from core.options.sentiment import compute_options_snapshot, iv_rank_from_history
+    from core.scoring.v3_stock_card import Block
+
+    symbol = card["symbol"]
+    chain_res = options_fetcher.get_chain(symbol, max_expiries=2)
+    if not chain_res.ok:
+        card["options_sentiment"] = Block("missing", note=chain_res.error)
+        return
+
+    snapshot = compute_options_snapshot(chain_res.data)
+    history = dbmod.get_metric_history(conn, "v5", f"{symbol}::options_snapshot", before_date=run_date, limit=252)
+    historical_ivs = [raw["atm_iv"] for _, raw in history if raw.get("atm_iv") is not None]
+
+    min_samples = cfg["v5"]["scenarios"]["iv_history_min_samples"]
+    iv_rank = (iv_rank_from_history(snapshot["atm_iv"], historical_ivs, min_samples)
+               if snapshot["atm_iv"] is not None else None)
+    prev_oi = history[0][1].get("total_oi") if history else None
+    oi_change_pct = (round(snapshot["total_oi"] / prev_oi - 1, 4)
+                     if prev_oi else None)
+
+    dbmod.upsert_metric(conn, run_date, "v5", f"{symbol}::options_snapshot", snapshot,
+                        None, None, "ok", None, now_iso)
+    card["options_sentiment"] = Block("ok", raw={**snapshot, "iv_rank": iv_rank, "oi_change_pct": oi_change_pct})
+
+
 def run_v3(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: str) -> tuple[str | None, dict]:
     watchlist = load_watchlist(cfg["watchlist"])
     if not watchlist:
         return None, {}
+
+    options_fetcher = None
+    if cfg["v5"].get("daily_sentiment_enabled"):
+        from core.fetchers.options_base import get_options_fetcher
+        options_fetcher = get_options_fetcher(cfg["v5"], cfg["fetcher"])
 
     cards = []
     for entry in watchlist:
@@ -95,6 +128,9 @@ def run_v3(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
             card["sentiment_items"] = sentiment["items"]
         else:
             card["sentiment_items"] = []
+
+        if options_fetcher is not None:
+            _attach_options_sentiment(card, options_fetcher, conn, run_date, now_iso, cfg)
         cards.append(card)
 
         for field_name in ("financial_momentum", "institutional", "relative_strength", "event_calendar", "news"):
@@ -117,6 +153,8 @@ def run_v4(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
     for card in cards:
         symbol = card["symbol"]
         alerts = v4.generate_alerts_for_symbol(fetcher, symbol, card, conn, run_date, cfg["v4"])
+        alerts += v4.generate_options_alerts(conn, run_date, symbol, card.get("options_sentiment"),
+                                              cfg["v5"]["alerts"])
         all_alerts.extend(alerts)
         if alerts:
             logger.info("V4 %s: %d alert(s) triggered", symbol, len(alerts))
