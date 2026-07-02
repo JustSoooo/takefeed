@@ -97,16 +97,19 @@ v4:
   news_spike_min_history: 10   # 样本不足时跳过该规则而非报假警
 
 v5:
-  # 期权数据源。首选 financial_service（guidebook 5.6），其客户端在
-  # core/fetchers/options_financial_service.py，需要补全服务的 base_url /
-  # 认证方式 / 字段映射后才可用（拿到 API 文档后填入下方 financial_service 节）。
-  # allow_fallback: true 时，financial_service 不可用会显式告警并降级 yfinance；
-  # 设为 false 则直接报错停止，绝不静默换源。
+  # 期权数据源。首选 financial_service（guidebook 5.6）——它是本地 Claude Code 里的
+  # Anthropic 金融分析 skill，不是 HTTP 服务，因此采用快照文件契约：在本地 Claude Code
+  # 会话中用该 skill 按 docs/financial_service_snapshot.md 的 schema 生成
+  # <snapshot_dir>/<SYMBOL>.json，本管道读文件并校验新鲜度（超过 max_age_hours 拒用，
+  # 过期期权数据比没有更危险）。
+  # allow_fallback: true 时，快照目录不存在会显式告警并降级 yfinance；
+  # 设为 false 则直接报错停止，绝不静默换源。单个标的快照缺失/过期不触发降级，
+  # 而是明确报错并给出生成指引。
   provider: financial_service
   allow_fallback: true
   financial_service:
-    base_url: ""        # 待接入
-    api_key_env: "FINANCIAL_SERVICE_API_KEY"
+    snapshot_dir: "data/options_snapshots"
+    max_age_hours: 24
 
   risk_free_ticker: "^IRX"   # 13周国库券贴现率，除以100作为无风险利率
   default_risk_free: 0.04    # ^IRX 取数失败时的显式默认值（页面会标注）

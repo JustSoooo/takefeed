@@ -11,6 +11,10 @@ from core.fetchers.base import FetchResult
 logger = logging.getLogger(__name__)
 
 
+class FinancialServiceUnavailable(RuntimeError):
+    """financial-service 数据源无法初始化（未配置/快照目录不存在）。"""
+
+
 @dataclass
 class OptionQuote:
     contract_symbol: str
@@ -83,7 +87,7 @@ def get_options_fetcher(v5_cfg: dict, fetch_cfg: dict) -> OptionsFetcher:
         from core.fetchers.options_financial_service import FinancialServiceOptionsFetcher
         try:
             return FinancialServiceOptionsFetcher(v5_cfg["financial_service"], fetch_cfg)
-        except NotImplementedError as exc:
+        except FinancialServiceUnavailable as exc:
             if not v5_cfg.get("allow_fallback", False):
                 raise
             logger.warning("financial-service 不可用（%s），按 allow_fallback=true 降级为 yfinance", exc)
