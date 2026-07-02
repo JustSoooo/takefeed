@@ -10,9 +10,14 @@
   ——财务动量、机构态度（分析师目标价/评级变动）、相对板块的强度、事件日历（下次财报），
   加上近7日新闻的 Claude 归纳（仅三档标签 利多/利空/中性 + 一句话理由，原始标题永远由代码
   本地拼回，不依赖模型复述）+ 静态仪表盘（`stocks.html`）
+- **V4 · 股池监控 + 异常预警**：对 watchlist 每日巡检六条规则——收盘价穿越20/50日均线、
+  成交量突破近30日均量2倍、单日涨跌幅超近90日波动率2倍标准差、财报临近5个交易日内、
+  当日分析师评级变动、新闻条数突破近30日日均3倍（复用 V3 已抓的数据，不重复取数）
+  + 静态仪表盘（`alerts.html`）
 
-其余模块（V4 股池监控 / V5 期权分析）按 [guidebook](./docs) 中定义的顺序逐步开发。
-这是决策支持系统，不接交易接口、不自动下单。
+其余模块（V5 期权分析）按 [guidebook](./docs) 中定义的顺序逐步开发。
+这是决策支持系统，不接交易接口、不自动下单。推送通道（邮件/Telegram）是 guidebook 标注的
+二期可选项，暂未实现——目前告警只进每日报告和网页仪表盘。
 
 ## 快速开始
 
@@ -27,8 +32,8 @@ python run_daily.py
 
 运行后：
 
-- `output/site/index.html` / `rotation.html` / `stocks.html` — 静态仪表盘，可直接用浏览器
-  打开，或部署到 GitHub Pages / Vercel
+- `output/site/index.html` / `rotation.html` / `stocks.html` / `alerts.html` — 静态仪表盘，
+  可直接用浏览器打开，或部署到 GitHub Pages / Vercel
 - `output/reports/daily_YYYYMMDD.md` — 当日报告存档（各模块共用一份文件）
 - `db/market.sqlite` — 全部历史指标落库，用于后续校准评分权重
 
@@ -43,12 +48,12 @@ python run_daily.py
 ```
 config.yaml          # 全部权重/阈值/标的清单/watchlist，不硬编码在代码里
 core/fetchers/        # 数据抓取层（yfinance 封装、广度计算、情绪抓取、板块持仓、个股基本面/新闻）
-core/scoring/          # v1_composite.py + v2_rotation.py + v3_stock_card.py（评分卡组装，不产出分数）
+core/scoring/          # v1_composite.py + v2_rotation.py + v3_stock_card.py + v4_alerts.py
 core/narrative/        # Claude API 层：V1 叙事转述 + V3 新闻三档分类，都集中在这一个文件
-core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（按模块拆分 render_v1/v2/v3）
-core/watchlist.py      # V3 watchlist 加载（config.yaml 列表 或 CSV 导入）
+core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（按模块拆分 render_v1/v2/v3/v4）
+core/watchlist.py      # V3/V4 共用的 watchlist 加载（config.yaml 列表 或 CSV 导入）
 templates/, static/    # 前端模板与设计 token（详见 guidebook 第 7 节）
-run_daily.py            # 编排入口：fetch -> score -> narrate -> render，V1/V2/V3 依次执行
+run_daily.py            # 编排入口：fetch -> score -> narrate -> render，V1/V2/V3/V4 依次执行
 ```
 
 ## 测试

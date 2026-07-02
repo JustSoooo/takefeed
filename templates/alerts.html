@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}股池监控告警 · 监控 & 选股平台{% endblock %}
+{% block content %}
+
+{% if is_sample_data %}
+  <div class="section">
+    <span class="sample-data-tag">示例数据 · 非实时</span>
+  </div>
+{% endif %}
+
+<section class="section">
+  <div class="section-label">结论 · 今日告警数 {{ total_count }}</div>
+
+  {% if total_count == 0 %}
+  <div class="hero" style="grid-template-columns: 1fr;">
+    <div>
+      <p class="narrative">今日 watchlist 内无触发规则的异动。这不代表没有值得关注的变化，只是没有
+      触及当前配置的阈值（价格穿越均线、成交量/涨跌幅异常、财报临近、评级变动、舆情异动），
+      阈值可在 config.yaml 里调整。</p>
+    </div>
+  </div>
+  {% else %}
+  <div class="dim-grid">
+    {% for group in groups %}
+    <div class="dim-card">
+      <div class="dim-card-head"><span class="dim-name">{{ group.symbol }}</span></div>
+      {% for a in group.alerts %}
+      <div class="state-note {{ a.note_class }}" style="margin-bottom: var(--space-2);">
+        [{{ a.severity_label }}] {{ a.message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

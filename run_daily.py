@@ -14,9 +14,11 @@ from core.narrative.generate import classify_news_sentiment, generate_v1_narrati
 from core.render.render_v1 import build_v1_report_section, render_v1_dashboard
 from core.render.render_v2 import build_v2_report_section, render_v2_dashboard
 from core.render.render_v3 import build_v3_report_section, render_v3_dashboard
+from core.render.render_v4 import build_v4_report_section, render_v4_dashboard
 from core.render.report import write_daily_report
 from core.scoring import v1_composite as v1
 from core.scoring import v2_rotation as v2
+from core.scoring import v4_alerts as v4
 from core.scoring.v3_stock_card import build_stock_card, serialize_card
 from core.watchlist import load_watchlist
 
@@ -107,8 +109,31 @@ def run_v3(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
     return section, {"cards": cards}
 
 
+def run_v4(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: str, cards: list[dict]) -> tuple[str | None, dict]:
+    if not cards:
+        return None, {}
+
+    all_alerts = []
+    for card in cards:
+        symbol = card["symbol"]
+        alerts = v4.generate_alerts_for_symbol(fetcher, symbol, card, conn, run_date, cfg["v4"])
+        all_alerts.extend(alerts)
+        if alerts:
+            logger.info("V4 %s: %d alert(s) triggered", symbol, len(alerts))
+
+        # always persist today's news count, even with zero alerts, so future runs have
+        # a baseline to compare against (guidebook 5.2's news-spike rule needs this history)
+        news_count_today = len(card["news"].raw) if card["news"].status == "ok" else 0
+        dbmod.upsert_metric(conn, run_date, "v4", f"{symbol}::news_count", {"count": news_count_today},
+                             None, None, "ok", None, now_iso)
+
+    render_v4_dashboard(all_alerts, as_of_date=run_date, generated_at=now_iso, output_dir=cfg["paths"]["site_dir"])
+    section = build_v4_report_section(all_alerts)
+    return section, {"alerts": all_alerts}
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Run the daily monitoring pipeline (V1 + V2 + V3).")
+    parser = argparse.ArgumentParser(description="Run the daily monitoring pipeline (V1 + V2 + V3 + V4).")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--date", default=None, help="Override run date (YYYY-MM-DD), defaults to today.")
     args = parser.parse_args()
@@ -127,9 +152,13 @@ def main():
         if v2_section:
             sections.append(v2_section)
 
-        v3_section, _ = run_v3(cfg, fetcher, conn, run_date, now_iso)
+        v3_section, v3_info = run_v3(cfg, fetcher, conn, run_date, now_iso)
         if v3_section:
             sections.append(v3_section)
+
+        v4_section, _ = run_v4(cfg, fetcher, conn, run_date, now_iso, v3_info.get("cards", []))
+        if v4_section:
+            sections.append(v4_section)
 
     report_path = write_daily_report(run_date, sections, cfg["paths"]["reports_dir"])
     logger.info("report written to %s", report_path)
