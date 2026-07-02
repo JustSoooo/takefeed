@@ -1,8 +1,14 @@
 # 监控 & 选股平台
 
-个人量化决策支持系统。当前已实现 **V1 · 宏观/市场情绪仪表盘**（六维度打分 + Claude 生成的
-中文简报 + 静态 HTML 仪表盘），其余模块（V2 行业轮动 / V3 个股评分 / V4 股池监控 / V5 期权分析）
-按 [guidebook](./docs) 中定义的顺序逐步开发。这是决策支持系统，不接交易接口、不自动下单。
+个人量化决策支持系统。当前已实现：
+
+- **V1 · 宏观/市场情绪仪表盘**：六维度打分（波动率/趋势/广度/信用/板块轮动/情绪）+ Claude
+  生成的中文简报 + 静态仪表盘（`index.html`）
+- **V2 · 行业轮动追踪**：11个 SPDR 板块 ETF 相对 SPY 的 1周/1月/3月超额收益矩阵、排名持续性
+  判断、强势板块内部健康度（普涨还是靠权重股拉动）+ 静态仪表盘（`rotation.html`）
+
+其余模块（V3 个股评分 / V4 股池监控 / V5 期权分析）按 [guidebook](./docs) 中定义的顺序逐步
+开发。这是决策支持系统，不接交易接口、不自动下单。
 
 ## 快速开始
 
@@ -17,26 +23,27 @@ python run_daily.py
 
 运行后：
 
-- `output/site/index.html` — 静态仪表盘，可直接用浏览器打开，或部署到 GitHub Pages / Vercel
-- `output/reports/daily_YYYYMMDD.md` — 当日报告存档
+- `output/site/index.html` / `rotation.html` — 静态仪表盘，可直接用浏览器打开，或部署到
+  GitHub Pages / Vercel
+- `output/reports/daily_YYYYMMDD.md` — 当日报告存档（各模块共用一份文件）
 - `db/market.sqlite` — 全部历史指标落库，用于后续校准评分权重
 
 ## 网络依赖
 
-数据抓取需要能访问 Yahoo Finance（`yfinance`）、AAII 和 CNN 的页面。部分网络环境（企业代理、
-部分 CI/沙箱）会拦截这些域名，此时请在有出站访问权限的机器上运行（本机或自建服务器均可）。
-定时任务配置见 [docs/cron.md](docs/cron.md)。
+数据抓取需要能访问 Yahoo Finance（`yfinance`）、AAII、CNN 的页面，以及 SPDR/SSGA 的板块 ETF
+持仓下载（V2 内部健康度用）。部分网络环境（企业代理、部分 CI/沙箱）会拦截这些域名，此时请在
+有出站访问权限的机器上运行（本机或自建服务器均可）。定时任务配置见 [docs/cron.md](docs/cron.md)。
 
 ## 项目结构
 
 ```
 config.yaml          # 全部权重/阈值/标的清单，不硬编码在代码里
-core/fetchers/        # 数据抓取层（yfinance 封装、广度计算、情绪抓取）
-core/scoring/          # 六维度打分 + 综合评分（纯计算，不依赖 LLM）
-core/narrative/        # Claude API 叙事层，只做文字转述，不做数字计算
-core/render/            # Jinja2 渲染仪表盘 + markdown 报告
+core/fetchers/        # 数据抓取层（yfinance 封装、广度计算、情绪抓取、板块持仓抓取）
+core/scoring/          # v1_composite.py（六维度综合分）+ v2_rotation.py（轮动矩阵/持续性/健康度）
+core/narrative/        # Claude API 叙事层，只做文字转述，不做数字计算（目前仅 V1 使用）
+core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（按模块拆分 render_v1/render_v2）
 templates/, static/    # 前端模板与设计 token（详见 guidebook 第 7 节）
-run_daily.py            # 编排入口：fetch -> score -> narrate -> render
+run_daily.py            # 编排入口：fetch -> score -> narrate -> render，V1/V2 依次执行
 ```
 
 ## 测试

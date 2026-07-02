@@ -1,15 +1,8 @@
-"""Render the V1 dashboard (Jinja2 templates + injected data) and the daily
-markdown report. Static site is fully regenerated on every run
-(guidebook 6: "静态站点,每次运行后重新生成")."""
+"""Render the V1 macro-sentiment dashboard (index.html) and its daily
+markdown report section."""
 import json
-import shutil
-from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TEMPLATES_DIR = PROJECT_ROOT / "templates"
-STATIC_DIR = PROJECT_ROOT / "static"
+from core.render.common import fmt_pct, get_env, pct_class, write_page
 
 DIM_ORDER = ["volatility", "trend", "breadth", "credit", "rotation", "sentiment"]
 DIM_LABELS = {
@@ -17,14 +10,6 @@ DIM_LABELS = {
     "credit": "信用", "rotation": "板块轮动", "sentiment": "情绪",
 }
 STATE_CLASS = {"防守": "defensive", "谨慎观望": "neutral", "积极": "aggressive"}
-
-
-def _fmt_pct(v):
-    return f"{v * 100:+.2f}%"
-
-
-def _pct_class(v):
-    return "pct-positive" if v >= 0 else "pct-negative"
 
 
 def _detail_rows(dimension: str, raw: dict) -> list[dict]:
@@ -43,11 +28,11 @@ def _detail_rows(dimension: str, raw: dict) -> list[dict]:
         rows.append({"label": "覆盖样本", "value": f"{raw['constituents_used']}/{raw['constituents_total']} ({raw['universe']})"})
     elif dimension == "credit":
         rows.append({"label": "HYG/IEF", "value": f"{raw['ratio']:.4f}"})
-        rows.append({"label": "5日变动", "value": _fmt_pct(raw["chg_5d"])})
-        rows.append({"label": "20日变动", "value": _fmt_pct(raw["chg_20d"])})
+        rows.append({"label": "5日变动", "value": fmt_pct(raw["chg_5d"])})
+        rows.append({"label": "20日变动", "value": fmt_pct(raw["chg_20d"])})
     elif dimension == "rotation":
-        rows.append({"label": "顺周期板块近1月均值", "value": _fmt_pct(raw["cyclical_avg_1m"])})
-        rows.append({"label": "防御板块近1月均值", "value": _fmt_pct(raw["defensive_avg_1m"])})
+        rows.append({"label": "顺周期板块近1月均值", "value": fmt_pct(raw["cyclical_avg_1m"])})
+        rows.append({"label": "防御板块近1月均值", "value": fmt_pct(raw["defensive_avg_1m"])})
         rows.append({"label": "近1月上涨板块占比", "value": f"{raw['pct_positive_1m']:.0f}%"})
     elif dimension == "sentiment":
         fg = raw.get("fear_greed")
@@ -84,8 +69,8 @@ def _build_sector_table(rotation_result):
         table.append({
             "name": s["name"], "symbol": s["symbol"],
             "style_label": "顺周期" if s["style"] == "cyclical" else "防御性",
-            "chg_1w_str": _fmt_pct(s["chg_1w"]), "chg_1w_class": _pct_class(s["chg_1w"]),
-            "chg_1m_str": _fmt_pct(s["chg_1m"]), "chg_1m_class": _pct_class(s["chg_1m"]),
+            "chg_1w_str": fmt_pct(s["chg_1w"]), "chg_1w_class": pct_class(s["chg_1w"]),
+            "chg_1m_str": fmt_pct(s["chg_1m"]), "chg_1m_class": pct_class(s["chg_1m"]),
         })
     chart_json = json.dumps({
         "labels": [s["name"] for s in sectors],
@@ -96,9 +81,7 @@ def _build_sector_table(rotation_result):
 
 def render_v1_dashboard(composite_score, state, dim_results, weights_used, narrative_data,
                          as_of_date, generated_at, output_dir: str, is_sample_data: bool = False):
-    env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
-    template = env.get_template("index.html")
-
+    template = get_env().get_template("index.html")
     sector_table, sector_chart_json = _build_sector_table(dim_results.get("rotation"))
 
     context = {
@@ -116,17 +99,12 @@ def render_v1_dashboard(composite_score, state, dim_results, weights_used, narra
         "sector_chart_json": sector_chart_json,
         "is_sample_data": is_sample_data,
     }
-
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "index.html").write_text(template.render(**context), encoding="utf-8")
-    shutil.copy(STATIC_DIR / "tokens.css", out_dir / "tokens.css")
+    write_page(output_dir, "index.html", template.render(**context))
 
 
-def write_markdown_report(composite_score, state, dim_results, weights_used, narrative_data,
-                           as_of_date, output_dir: str) -> Path:
+def build_v1_report_section(composite_score, state, dim_results, weights_used, narrative_data) -> str:
     lines = [
-        f"# 宏观情绪日报 · {as_of_date}",
+        "## V1 · 宏观情绪",
         "",
         f"**综合评分: {composite_score:.1f} / 100　状态: {state}**",
         "",
@@ -134,17 +112,17 @@ def write_markdown_report(composite_score, state, dim_results, weights_used, nar
         "",
     ]
     if narrative_data.get("suggestions"):
-        lines.append("## 建议")
+        lines.append("### 建议")
         for s in narrative_data["suggestions"]:
             lines.append(f"- {s}")
         lines.append("")
 
-    lines.append("## 六维度明细")
+    lines.append("### 六维度明细")
     for key in DIM_ORDER:
         d = dim_results.get(key)
         if d is None:
             continue
-        lines.append(f"### {DIM_LABELS[key]}")
+        lines.append(f"#### {DIM_LABELS[key]}")
         if d.status == "ok":
             w = weights_used.get(key)
             w_str = f"{w:.3f}" if w is not None else "-"
@@ -155,8 +133,4 @@ def write_markdown_report(composite_score, state, dim_results, weights_used, nar
             lines.append(f"- 数据缺失: {d.note}")
         lines.append("")
 
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report_path = out_dir / f"daily_{as_of_date.replace('-', '')}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
-    return report_path
+    return "\n".join(lines)

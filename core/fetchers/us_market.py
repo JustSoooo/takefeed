@@ -88,6 +88,16 @@ def percentile_of_last(series: pd.Series) -> float:
     return float((clean <= clean.iloc[-1]).mean() * 100)
 
 
+def extract_symbol_close(multi_df: pd.DataFrame, symbol: str) -> pd.Series | None:
+    """Pull one ticker's Close series out of a yf.download(..., group_by='ticker') frame."""
+    try:
+        if isinstance(multi_df.columns, pd.MultiIndex):
+            return multi_df[symbol]["Close"].dropna()
+        return multi_df["Close"].dropna()
+    except (KeyError, TypeError):
+        return None
+
+
 def above_ma_ratio(close: pd.Series, windows: list[int]) -> float:
     """Fraction of the given moving-average windows the last close sits above."""
     hits = 0

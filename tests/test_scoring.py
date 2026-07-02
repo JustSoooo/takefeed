@@ -9,7 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import db as dbmod
-from core.render.render_site import render_v1_dashboard, write_markdown_report
+from core.render.render_v1 import build_v1_report_section, render_v1_dashboard
+from core.render.report import write_daily_report
 from core.scoring.v1_composite import DimensionResult, compute_composite
 
 WEIGHTS = {
@@ -90,8 +91,8 @@ def test_render_dashboard_and_report(tmp_path):
     render_v1_dashboard(score, state, dims, weights_used, narrative_data,
                          as_of_date="2026-07-02", generated_at="2026-07-02T20:30:00Z",
                          output_dir=str(site_dir), is_sample_data=True)
-    report_path = write_markdown_report(score, state, dims, weights_used, narrative_data,
-                                         as_of_date="2026-07-02", output_dir=str(reports_dir))
+    section = build_v1_report_section(score, state, dims, weights_used, narrative_data)
+    report_path = write_daily_report("2026-07-02", [section], str(reports_dir))
 
     html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "示例数据" in html

@@ -8,6 +8,20 @@ anthropic:
   model: claude-sonnet-5
   max_tokens: 1024
 
+# 11个 SPDR 板块 ETF，V1（板块轮动维度）和 V2（轮动追踪模块）共用同一份清单
+sector_etfs:
+  - { symbol: "XLK", name: "科技", style: cyclical }
+  - { symbol: "XLY", name: "非必需消费", style: cyclical }
+  - { symbol: "XLF", name: "金融", style: cyclical }
+  - { symbol: "XLI", name: "工业", style: cyclical }
+  - { symbol: "XLE", name: "能源", style: cyclical }
+  - { symbol: "XLB", name: "材料", style: cyclical }
+  - { symbol: "XLRE", name: "房地产", style: defensive }
+  - { symbol: "XLP", name: "必需消费", style: defensive }
+  - { symbol: "XLU", name: "公用事业", style: defensive }
+  - { symbol: "XLV", name: "医疗", style: defensive }
+  - { symbol: "XLC", name: "通信服务", style: cyclical }
+
 v1:
   # 六维度权重，必须合计为 1.0。当某维度当日取数失败时会被剔除，
   # 剩余维度按原比例重新归一化（见 core/scoring/v1_composite.py）。
@@ -35,23 +49,24 @@ v1:
   # 广度指标起步用道指30（跑通逻辑后可扩展为标普500全量，见 guidebook 2.2）
   breadth_universe: dow30
 
-  sector_etfs:
-    - { symbol: "XLK", name: "科技", style: cyclical }
-    - { symbol: "XLY", name: "非必需消费", style: cyclical }
-    - { symbol: "XLF", name: "金融", style: cyclical }
-    - { symbol: "XLI", name: "工业", style: cyclical }
-    - { symbol: "XLE", name: "能源", style: cyclical }
-    - { symbol: "XLB", name: "材料", style: cyclical }
-    - { symbol: "XLRE", name: "房地产", style: defensive }
-    - { symbol: "XLP", name: "必需消费", style: defensive }
-    - { symbol: "XLU", name: "公用事业", style: defensive }
-    - { symbol: "XLV", name: "医疗", style: defensive }
-    - { symbol: "XLC", name: "通信服务", style: cyclical }
-
   sentiment:
     aaii_url: "https://www.aaii.com/sentimentsurvey/sent_results"
     fear_greed_url: "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
     min_history_for_percentile: 20  # 样本不足时退化为阈值法而非百分位法
+
+v2:
+  benchmark: "SPY"
+  # 三个窗口的交易日数：1周/1月/3月
+  windows: { short: 5, mid: 21, long: 63 }
+  # 持续性判断以 1 月窗口排名为准（guidebook 3.1："连续N周排名前3 = 强持续信号"，
+  # 本系统按日巡检，用 trading-day 回看窗口近似"周"的概念）
+  persistence:
+    top_n: 3
+    lookback_days: 20
+    hit_ratio_threshold: 0.7
+  internal_health:
+    holdings_top_n: 15   # 用权重前15大持仓近似板块内部健康度，而非全量成分股
+    strong_sector_count: 3  # 只对当前排名前3的板块计算内部健康度，控制取数量
 
 fetcher:
   max_retries: 3
