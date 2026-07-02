@@ -1,0 +1,33 @@
+# 道琼斯30成分股清单，用于广度指标起步（guidebook 2.2 建议：先用道指30跑通逻辑，
+# 再扩展到标普500全量）。手工维护，建议每月核对一次，不做每日自动抓取。
+# 最近核对日期: 2025-Q4（数据来源: Wikipedia S&P Dow Jones Indices - Dow 30 constituents）
+AAPL
+AMGN
+AMZN
+AXP
+BA
+CAT
+CRM
+CSCO
+CVX
+DIS
+GS
+HD
+HON
+IBM
+JNJ
+JPM
+KO
+MCD
+MMM
+MRK
+MSFT
+NKE
+NVDA
+PG
+SHW
+TRV
+UNH
+V
+VZ
+WMT

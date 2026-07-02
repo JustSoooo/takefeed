@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+db/*.sqlite
+db/*.sqlite-journal
+output/reports/*.md
+output/site/*.html
+output/site/tokens.css
+!output/reports/.gitkeep
+!output/site/.gitkeep
+logs/*.log
+.DS_Store
+.pytest_cache/
+

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}宏观情绪仪表盘 · 监控 & 选股平台{% endblock %}
+{% block content %}
+
+{% if is_sample_data %}
+  <div class="section">
+    <span class="sample-data-tag">示例数据 · 非实时</span>
+  </div>
+{% endif %}
+
+<section class="section">
+  <div class="section-label">结论 · 风险偏好综合评分</div>
+  <div class="hero">
+    <div class="hero-score">
+      <div class="value">{{ composite_score }}</div>
+      <div class="scale">/ 100</div>
+      <div class="state-badge {{ state_class }}">{{ state }}</div>
+    </div>
+    <div>
+      <div class="gauge">
+        <div class="marker" style="left: {{ gauge_position_pct }}%;"></div>
+      </div>
+      <p class="narrative" style="margin-top: 20px;">{{ narrative }}</p>
+      {% if suggestions %}
+      <ul class="suggestions">
+        {% for s in suggestions %}
+        <li>{{ s }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-label">分解 · 六维度打分</div>
+  <div class="dim-grid">
+    {% for d in dimensions %}
+    <div class="dim-card {{ 'is-empty' if d.status == 'missing' else '' }}">
+      <div class="dim-card-head">
+        <span class="dim-name">{{ d.label }}</span>
+        {% if d.status == 'ok' %}
+        <span class="dim-score {{ d.score_class }}">{{ d.score_str }}</span>
+        {% endif %}
+      </div>
+      {% if d.status == 'ok' %}
+        {% if d.percentile_str %}
+        <div class="dim-percentile">近1年百分位 {{ d.percentile_str }}</div>
+        {% endif %}
+        <div class="dim-detail">
+          {% for row in d.detail_rows %}
+          <div class="dim-detail-row"><span>{{ row.label }}</span><span>{{ row.value }}</span></div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ d.note }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if sector_table %}
+<section class="section">
+  <div class="section-label">明细 · 板块相对强弱（11 个 SPDR 板块 ETF）</div>
+  <div class="chart-wrap">
+    <canvas id="sectorChart" height="90"></canvas>
+  </div>
+  <table class="data-table" style="margin-top: var(--space-4);">
+    <thead>
+      <tr><th>板块</th><th>代码</th><th>风格</th><th>近1周</th><th>近1月</th></tr>
+    </thead>
+    <tbody>
+      {% for row in sector_table %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td>{{ row.symbol }}</td>
+        <td>{{ row.style_label }}</td>
+        <td class="{{ row.chg_1w_class }}">{{ row.chg_1w_str }}</td>
+        <td class="{{ row.chg_1m_class }}">{{ row.chg_1m_str }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  const sectorData = {{ sector_chart_json | safe }};
+  const ctx = document.getElementById('sectorChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: sectorData.labels,
+        datasets: [{
+          label: '近1月涨跌幅 %',
+          data: sectorData.chg_1m,
+          backgroundColor: sectorData.chg_1m.map(v => v >= 0 ? '#3ddc84' : '#ff5c5c'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b93a1', font: { family: 'IBM Plex Mono' } }, grid: { color: '#1f242e' } },
+          y: { ticks: { color: '#e8eaed', font: { family: 'Inter' } }, grid: { display: false } },
+        },
+        animation: { duration: 0 },
+      }
+    });
+  }
+</script>
+
+{% endblock %}

@@ -1,0 +1,64 @@
+# 监控 & 选股平台配置
+# 全部权重/阈值/标的清单在此维护，禁止在代码中硬编码。
+# 初期权重全部等权，跑 2-4 周人工复盘后再调整（见 guidebook 第 8 节 M2）。
+
+market: us   # us | cn（cn 为二期，当前未实现）
+
+anthropic:
+  model: claude-sonnet-5
+  max_tokens: 1024
+
+v1:
+  # 六维度权重，必须合计为 1.0。当某维度当日取数失败时会被剔除，
+  # 剩余维度按原比例重新归一化（见 core/scoring/v1_composite.py）。
+  weights:
+    volatility: 0.1667
+    trend: 0.1667
+    breadth: 0.1667
+    credit: 0.1667
+    rotation: 0.1667
+    sentiment: 0.1665
+
+  # 三档状态阈值
+  state_thresholds:
+    defensive_below: 35
+    aggressive_above: 65
+
+  tickers:
+    vix: "^VIX"
+    vix9d: "^VIX9D"
+    trend: ["SPY", "QQQ"]
+    credit_risk_on: "HYG"
+    credit_risk_off: "IEF"
+    irx: "^IRX"
+
+  # 广度指标起步用道指30（跑通逻辑后可扩展为标普500全量，见 guidebook 2.2）
+  breadth_universe: dow30
+
+  sector_etfs:
+    - { symbol: "XLK", name: "科技", style: cyclical }
+    - { symbol: "XLY", name: "非必需消费", style: cyclical }
+    - { symbol: "XLF", name: "金融", style: cyclical }
+    - { symbol: "XLI", name: "工业", style: cyclical }
+    - { symbol: "XLE", name: "能源", style: cyclical }
+    - { symbol: "XLB", name: "材料", style: cyclical }
+    - { symbol: "XLRE", name: "房地产", style: defensive }
+    - { symbol: "XLP", name: "必需消费", style: defensive }
+    - { symbol: "XLU", name: "公用事业", style: defensive }
+    - { symbol: "XLV", name: "医疗", style: defensive }
+    - { symbol: "XLC", name: "通信服务", style: cyclical }
+
+  sentiment:
+    aaii_url: "https://www.aaii.com/sentimentsurvey/sent_results"
+    fear_greed_url: "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+    min_history_for_percentile: 20  # 样本不足时退化为阈值法而非百分位法
+
+fetcher:
+  max_retries: 3
+  backoff_base_seconds: 2
+  history_period: "1y"
+
+paths:
+  db: "db/market.sqlite"
+  reports_dir: "output/reports"
+  site_dir: "output/site"

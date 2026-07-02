@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}监控 & 选股平台{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <div class="site-title">
+        监控 & 选股平台
+        <span class="as-of">数据截至 {{ as_of_date }}</span>
+      </div>
+      <nav class="module-nav">
+        <a href="index.html" class="{{ 'active' if active_module == 'v1' else '' }}">宏观情绪</a>
+        <span class="disabled">行业轮动 · 即将上线</span>
+        <span class="disabled">个股评分 · 即将上线</span>
+        <span class="disabled">股池监控 · 即将上线</span>
+        <span class="disabled">期权分析 · 即将上线</span>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      本页面由 run_daily.py 于 {{ generated_at }} 自动生成，不构成投资建议。
+      评分体系未经历史回测验证，处于人工校准期（见项目 guidebook 第 8/9 节）。
+    </div>
+  </footer>
+</body>
+</html>
