@@ -1,0 +1,56 @@
+name: Daily monitoring run
+
+on:
+  schedule:
+    # 20:30 UTC = 16:30 America/New_York during EDT (roughly Mar-Nov).
+    # During EST (roughly Nov-Mar) this fires at 15:30 ET instead of 16:30 ET
+    # (an hour before the intended post-close buffer) -- acceptable for a
+    # personal decision-support tool; revisit if that hour matters.
+    - cron: "30 20 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  run-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run daily pipeline (V1-V4)
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+        run: python run_daily.py
+
+      - name: Persist metric history back to the repo
+        run: |
+          git config user.name "takefeed-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f db/market.sqlite
+          git diff --cached --quiet || git commit -m "chore: update market.sqlite [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: output/site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

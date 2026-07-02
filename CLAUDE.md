@@ -104,11 +104,22 @@ is a deliberate, dated, human-reviewed step after 2-4 weeks of paper comparison.
 ## Frontend
 
 Static HTML only (`output/site/*.html`), generated fresh on every `run_daily.py` run via
-Jinja2 — no backend, deployable as-is to GitHub Pages/Vercel. Design system rules (dark-tech
-data panel, single accent color, IBM Plex Mono for numbers, no em-dashes, four states per data
+Jinja2 — no backend. `templates/base.html` renders a shared nav bar across all five pages, so
+`index.html` (V1) doubles as the site's entry point. Design system rules (dark-tech data
+panel, single accent color, IBM Plex Mono for numbers, no em-dashes, four states per data
 card: loading/empty/error/ok, etc.) are fully specified in `docs/guidebook.md` section 7 —
 follow them exactly rather than improvising, they're adapted from the `design-taste-frontend`
 skill's rules for a dashboard context.
+
+## Deployment
+
+`.github/workflows/daily.yml` runs `run_daily.py` on a schedule (weekday UTC 20:30) and on
+`workflow_dispatch`, commits the updated `db/market.sqlite` back to the branch (force-added
+past `.gitignore` — this is intentional, the CI runner is now the source of truth for
+accumulated history), then deploys `output/site/` to GitHub Pages. Needs a `ZHIPU_API_KEY`
+repo secret and Pages source set to "GitHub Actions" (both one-time manual steps in repo
+Settings, see `docs/cron.md`). The repo is public, so the deployed dashboard — watchlist,
+scores, options analysis — is publicly visible; there's no access control on the free tier.
 
 ## Current status
 
