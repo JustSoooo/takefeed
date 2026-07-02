@@ -84,13 +84,16 @@ def build_stock_card(fetcher: USMarketFetcher, ticker_entry: dict, cfg: dict, fe
     }
 
 
-_BLOCK_FIELDS = ["financial_momentum", "institutional", "relative_strength", "event_calendar", "news"]
+_BLOCK_FIELDS = ["financial_momentum", "institutional", "relative_strength", "event_calendar", "news",
+                 "options_sentiment"]
 
 
 def serialize_card(card: dict) -> dict:
     """JSON-safe snapshot of a card for SQLite persistence (Block -> plain dict)."""
     out = {"current_price": card["current_price"], "sentiment_items": card.get("sentiment_items", [])}
     for field_name in _BLOCK_FIELDS:
-        b = card[field_name]
+        b = card.get(field_name)
+        if b is None:
+            continue  # options_sentiment 在 daily_sentiment_enabled=false 时不存在
         out[field_name] = {"status": b.status, "raw": b.raw, "note": b.note}
     return out

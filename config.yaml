@@ -96,6 +96,49 @@ v4:
   news_spike_lookback_days: 30
   news_spike_min_history: 10   # 样本不足时跳过该规则而非报假警
 
+v5:
+  # 期权数据源。首选 financial_service（guidebook 5.6），其客户端在
+  # core/fetchers/options_financial_service.py，需要补全服务的 base_url /
+  # 认证方式 / 字段映射后才可用（拿到 API 文档后填入下方 financial_service 节）。
+  # allow_fallback: true 时，financial_service 不可用会显式告警并降级 yfinance；
+  # 设为 false 则直接报错停止，绝不静默换源。
+  provider: financial_service
+  allow_fallback: true
+  financial_service:
+    base_url: ""        # 待接入
+    api_key_env: "FINANCIAL_SERVICE_API_KEY"
+
+  risk_free_ticker: "^IRX"   # 13周国库券贴现率，除以100作为无风险利率
+  default_risk_free: 0.04    # ^IRX 取数失败时的显式默认值（页面会标注）
+  max_expiries: 8            # 每次拉取的到期日数量上限，控制请求量
+
+  # 流动性过滤（默认开启的硬规则，guidebook 5.6 功能一）
+  liquidity:
+    min_open_interest: 100
+    min_volume: 10
+    max_spread_over_mid: 0.10
+
+  scenarios:
+    price_step_pct: 0.05     # 敏感性矩阵：预期价格 ±5%
+    date_step_bdays: 5       # 敏感性矩阵：预期日期 ±5 个交易日
+    iv_history_min_samples: 20  # 情景B（IV回落至近1年中位数）所需的最少历史样本，
+                                # 不足时该情景显式标记缺失，绝不用编造的中位数
+
+  # 3×3 推荐矩阵的到期分桶（自然日）
+  buckets:
+    zero_dte: { min: 0, max: 3 }
+    mid: { min: 14, max: 92 }
+    leaps: { min: 180, max: 1100 }
+
+  # 5.4 回填：每日为 watchlist 抓期权快照（P/C、ATM IV、持仓量），供 V3 展示与 V4 预警
+  daily_sentiment_enabled: true
+  alerts:
+    iv_jump_threshold: 0.20            # IV 单日跳升 > 20% 预警
+    volume_multiplier: 3.0             # 期权成交量 > 30日均量 3 倍
+    volume_lookback_days: 30
+    volume_min_history: 10
+    strike_concentration_threshold: 0.40  # 且集中于单一行权价（占比阈值）
+
 fetcher:
   max_retries: 3
   backoff_base_seconds: 2

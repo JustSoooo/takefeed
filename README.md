@@ -15,9 +15,31 @@
   当日分析师评级变动、新闻条数突破近30日日均3倍（复用 V3 已抓的数据，不重复取数）
   + 静态仪表盘（`alerts.html`）
 
-其余模块（V5 期权分析）按 [guidebook](./docs) 中定义的顺序逐步开发。
-这是决策支持系统，不接交易接口、不自动下单。推送通道（邮件/Telegram）是 guidebook 标注的
-二期可选项，暂未实现——目前告警只进每日报告和网页仪表盘。
+- **V5 · 期权分析**：按需运行的分析工具（`run_options.py`，不进每日巡检）——期权链浏览
+  （流动性硬过滤 + IV 期限结构）、情景收益预估（BS 中途估值、双 IV 情景、±5%价格 ×
+  ±5交易日敏感性矩阵、payoff 图、跨财报 IV crush 警示）、3×3 腿策略推荐矩阵（到期分桶 ×
+  风险偏好，最大亏损置于最显著层级，保守×末日硬编码拒绝）。同时回填 guidebook 5.4：
+  V3 评分卡新增"期权市场情绪"字段，V4 新增 IV 单日跳升与期权成交量异常两条预警
+
+五个模块全部落地。这是决策支持系统，不接交易接口、不自动下单。推送通道（邮件/Telegram）
+是 guidebook 标注的二期可选项，暂未实现——目前告警只进每日报告和网页仪表盘。
+
+## V5 期权数据源说明
+
+guidebook 指定 financial-service 为首选数据源、yfinance 为降级源。抽象接口
+（`core/fetchers/options_base.py`）和 yfinance 实现已完整可用；financial-service 客户端
+（`core/fetchers/options_financial_service.py`）是结构就位的骨架，**等待该服务的 API 文档
+（base_url、认证方式、字段映射）后补全**，补全后填入 `config.yaml` 的
+`v5.financial_service.base_url` 即可切换，上层代码零改动。`v5.allow_fallback: true` 时
+financial-service 不可用会显式告警后降级 yfinance，设为 `false` 则直接报错，绝不静默换源。
+
+```bash
+# 期权链 + 推荐矩阵
+python run_options.py --symbol NVDA
+
+# 完整情景分析（预期价格 + 预期日期，可选 --position 自定义 1-4 腿）
+python run_options.py --symbol NVDA --expected-price 210 --expected-date 2026-08-21
+```
 
 ## 快速开始
 
@@ -47,13 +69,15 @@ python run_daily.py
 
 ```
 config.yaml          # 全部权重/阈值/标的清单/watchlist，不硬编码在代码里
-core/fetchers/        # 数据抓取层（yfinance 封装、广度计算、情绪抓取、板块持仓、个股基本面/新闻）
+core/fetchers/        # 数据抓取层（yfinance 封装、广度/情绪/板块持仓/个股/期权链，含 options 抽象接口）
 core/scoring/          # v1_composite.py + v2_rotation.py + v3_stock_card.py + v4_alerts.py
+core/options/           # V5 数学层：BS 定价/希腊值、情景引擎、3×3 推荐引擎、期权情绪快照
 core/narrative/        # Claude API 层：V1 叙事转述 + V3 新闻三档分类，都集中在这一个文件
-core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（按模块拆分 render_v1/v2/v3/v4）
+core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（render_v1/v2/v3/v4/v5）
 core/watchlist.py      # V3/V4 共用的 watchlist 加载（config.yaml 列表 或 CSV 导入）
 templates/, static/    # 前端模板与设计 token（详见 guidebook 第 7 节）
-run_daily.py            # 编排入口：fetch -> score -> narrate -> render，V1/V2/V3/V4 依次执行
+run_daily.py            # 每日编排入口：V1/V2/V3(含期权情绪快照)/V4 依次执行
+run_options.py          # V5 按需分析入口（期权链/情景预估/推荐矩阵 -> options.html）
 ```
 
 ## 测试

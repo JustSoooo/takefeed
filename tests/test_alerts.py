@@ -154,6 +154,55 @@ def test_generate_alerts_for_symbol_integration():
             assert all(a.symbol == "TEST" for a in alerts)
 
 
+def test_check_iv_jump_and_option_volume_anomaly():
+    import tempfile
+    from core.scoring.v4_alerts import check_iv_jump, check_option_volume_anomaly, generate_options_alerts
+
+    with tempfile.TemporaryDirectory() as d:
+        with dbmod.connect(f"{d}/test.sqlite") as conn:
+            # 无历史：两条规则都应跳过而非报假警
+            assert check_iv_jump(conn, "2026-07-02", "TEST", 0.50, threshold=0.20) is None
+            assert check_option_volume_anomaly(conn, "2026-07-02", "TEST", 90000, 0.5, 100.0,
+                                                lookback_days=30, multiplier=3.0,
+                                                concentration_threshold=0.4, min_history=10) is None
+
+            for i in range(15):
+                past_date = f"2026-06-{10 + i:02d}"
+                dbmod.upsert_metric(conn, past_date, "v5", "TEST::options_snapshot",
+                                     {"atm_iv": 0.30, "total_volume": 10000, "total_oi": 50000},
+                                     None, None, "ok", None, f"{past_date}T20:30:00Z")
+
+            # IV 0.30 -> 0.40 = +33% > 20% 阈值
+            iv_alert = check_iv_jump(conn, "2026-07-02", "TEST", 0.40, threshold=0.20)
+            assert iv_alert is not None and iv_alert.rule == "iv_jump"
+            assert check_iv_jump(conn, "2026-07-02", "TEST", 0.33, threshold=0.20) is None
+
+            # 量 9 倍于均量且 50% 集中单一行权价
+            vol_alert = check_option_volume_anomaly(conn, "2026-07-02", "TEST", 90000, 0.5, 100.0,
+                                                     lookback_days=30, multiplier=3.0,
+                                                     concentration_threshold=0.4, min_history=10)
+            assert vol_alert is not None and vol_alert.rule == "option_volume_anomaly"
+            # 量够大但不集中：不触发
+            assert check_option_volume_anomaly(conn, "2026-07-02", "TEST", 90000, 0.2, 100.0,
+                                                lookback_days=30, multiplier=3.0,
+                                                concentration_threshold=0.4, min_history=10) is None
+
+            # 组合入口：Block missing 时静默跳过
+            assert generate_options_alerts(conn, "2026-07-02", "TEST",
+                                            Block("missing", note="x"), {
+                                                "iv_jump_threshold": 0.20, "volume_multiplier": 3.0,
+                                                "volume_lookback_days": 30, "volume_min_history": 10,
+                                                "strike_concentration_threshold": 0.40}) == []
+            alerts = generate_options_alerts(conn, "2026-07-02", "TEST",
+                                              Block("ok", raw={"atm_iv": 0.40, "total_volume": 90000,
+                                                               "max_strike_volume_share": 0.5,
+                                                               "max_volume_strike": 100.0}), {
+                                                  "iv_jump_threshold": 0.20, "volume_multiplier": 3.0,
+                                                  "volume_lookback_days": 30, "volume_min_history": 10,
+                                                  "strike_concentration_threshold": 0.40})
+            assert {a.rule for a in alerts} == {"iv_jump", "option_volume_anomaly"}
+
+
 def test_render_v4_dashboard_and_report_with_alerts(tmp_path):
     from core.scoring.v4_alerts import Alert
     alerts = [
