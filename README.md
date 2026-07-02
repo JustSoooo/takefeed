@@ -6,9 +6,13 @@
   生成的中文简报 + 静态仪表盘（`index.html`）
 - **V2 · 行业轮动追踪**：11个 SPDR 板块 ETF 相对 SPY 的 1周/1月/3月超额收益矩阵、排名持续性
   判断、强势板块内部健康度（普涨还是靠权重股拉动）+ 静态仪表盘（`rotation.html`）
+- **V3 · 个股综合评分**：watchlist（`config.yaml` 手工维护或 CSV 导入）里每只票的评分卡
+  ——财务动量、机构态度（分析师目标价/评级变动）、相对板块的强度、事件日历（下次财报），
+  加上近7日新闻的 Claude 归纳（仅三档标签 利多/利空/中性 + 一句话理由，原始标题永远由代码
+  本地拼回，不依赖模型复述）+ 静态仪表盘（`stocks.html`）
 
-其余模块（V3 个股评分 / V4 股池监控 / V5 期权分析）按 [guidebook](./docs) 中定义的顺序逐步
-开发。这是决策支持系统，不接交易接口、不自动下单。
+其余模块（V4 股池监控 / V5 期权分析）按 [guidebook](./docs) 中定义的顺序逐步开发。
+这是决策支持系统，不接交易接口、不自动下单。
 
 ## 快速开始
 
@@ -23,8 +27,8 @@ python run_daily.py
 
 运行后：
 
-- `output/site/index.html` / `rotation.html` — 静态仪表盘，可直接用浏览器打开，或部署到
-  GitHub Pages / Vercel
+- `output/site/index.html` / `rotation.html` / `stocks.html` — 静态仪表盘，可直接用浏览器
+  打开，或部署到 GitHub Pages / Vercel
 - `output/reports/daily_YYYYMMDD.md` — 当日报告存档（各模块共用一份文件）
 - `db/market.sqlite` — 全部历史指标落库，用于后续校准评分权重
 
@@ -37,13 +41,14 @@ python run_daily.py
 ## 项目结构
 
 ```
-config.yaml          # 全部权重/阈值/标的清单，不硬编码在代码里
-core/fetchers/        # 数据抓取层（yfinance 封装、广度计算、情绪抓取、板块持仓抓取）
-core/scoring/          # v1_composite.py（六维度综合分）+ v2_rotation.py（轮动矩阵/持续性/健康度）
-core/narrative/        # Claude API 叙事层，只做文字转述，不做数字计算（目前仅 V1 使用）
-core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（按模块拆分 render_v1/render_v2）
+config.yaml          # 全部权重/阈值/标的清单/watchlist，不硬编码在代码里
+core/fetchers/        # 数据抓取层（yfinance 封装、广度计算、情绪抓取、板块持仓、个股基本面/新闻）
+core/scoring/          # v1_composite.py + v2_rotation.py + v3_stock_card.py（评分卡组装，不产出分数）
+core/narrative/        # Claude API 层：V1 叙事转述 + V3 新闻三档分类，都集中在这一个文件
+core/render/            # Jinja2 渲染仪表盘 + 每日 markdown 报告（按模块拆分 render_v1/v2/v3）
+core/watchlist.py      # V3 watchlist 加载（config.yaml 列表 或 CSV 导入）
 templates/, static/    # 前端模板与设计 token（详见 guidebook 第 7 节）
-run_daily.py            # 编排入口：fetch -> score -> narrate -> render，V1/V2 依次执行
+run_daily.py            # 编排入口：fetch -> score -> narrate -> render，V1/V2/V3 依次执行
 ```
 
 ## 测试

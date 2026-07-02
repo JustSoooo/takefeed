@@ -68,6 +68,23 @@ v2:
     holdings_top_n: 15   # 用权重前15大持仓近似板块内部健康度，而非全量成分股
     strong_sector_count: 3  # 只对当前排名前3的板块计算内部健康度，控制取数量
 
+# 候选池 watchlist，初期用户手工维护（guidebook 4.1）。source: config 时用下面的
+# tickers 列表；source: csv 时改为读取 csv_path（单列 ticker，或 ticker,sector_etf 两列）。
+watchlist:
+  source: config
+  csv_path: "data/watchlist.csv"
+  tickers:
+    - { ticker: "AAPL", sector_etf: "XLK" }
+    - { ticker: "MSFT", sector_etf: "XLK" }
+    - { ticker: "NVDA", sector_etf: "XLK" }
+
+v3:
+  windows: { mid: 21, long: 63 }  # 相对强度用 1月/3月
+  news_lookback_days: 7
+  news_max_headlines: 15
+  upgrades_downgrades_lookback_days: 30
+  earnings_soon_threshold_days: 5
+
 fetcher:
   max_retries: 3
   backoff_base_seconds: 2

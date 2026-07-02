@@ -10,12 +10,15 @@ import yaml
 
 from core import db as dbmod
 from core.fetchers.us_market import USMarketFetcher
-from core.narrative.generate import generate_v1_narrative
+from core.narrative.generate import classify_news_sentiment, generate_v1_narrative
 from core.render.render_v1 import build_v1_report_section, render_v1_dashboard
 from core.render.render_v2 import build_v2_report_section, render_v2_dashboard
+from core.render.render_v3 import build_v3_report_section, render_v3_dashboard
 from core.render.report import write_daily_report
 from core.scoring import v1_composite as v1
 from core.scoring import v2_rotation as v2
+from core.scoring.v3_stock_card import build_stock_card, serialize_card
+from core.watchlist import load_watchlist
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("run_daily")
@@ -76,8 +79,36 @@ def run_v2(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
     return section, {"matrix": matrix_result.raw, "health": health_results}
 
 
+def run_v3(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: str) -> tuple[str | None, dict]:
+    watchlist = load_watchlist(cfg["watchlist"])
+    if not watchlist:
+        return None, {}
+
+    cards = []
+    for entry in watchlist:
+        card = build_stock_card(fetcher, entry, cfg["v3"], cfg["fetcher"])
+
+        if card["news"].status == "ok" and card["news"].raw:
+            sentiment = classify_news_sentiment(card["symbol"], card["news"].raw, cfg["anthropic"])
+            card["sentiment_items"] = sentiment["items"]
+        else:
+            card["sentiment_items"] = []
+        cards.append(card)
+
+        for field_name in ("financial_momentum", "institutional", "relative_strength", "event_calendar", "news"):
+            block = card[field_name]
+            if block.status == "missing":
+                logger.warning("V3 %s.%s missing today: %s", card["symbol"], field_name, block.note)
+
+        dbmod.upsert_metric(conn, run_date, "v3", card["symbol"], serialize_card(card), None, None, "ok", None, now_iso)
+
+    render_v3_dashboard(cards, as_of_date=run_date, generated_at=now_iso, output_dir=cfg["paths"]["site_dir"])
+    section = build_v3_report_section(cards)
+    return section, {"cards": cards}
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Run the daily monitoring pipeline (V1 + V2).")
+    parser = argparse.ArgumentParser(description="Run the daily monitoring pipeline (V1 + V2 + V3).")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--date", default=None, help="Override run date (YYYY-MM-DD), defaults to today.")
     args = parser.parse_args()
@@ -95,6 +126,10 @@ def main():
         v2_section, _ = run_v2(cfg, fetcher, conn, run_date, now_iso)
         if v2_section:
             sections.append(v2_section)
+
+        v3_section, _ = run_v3(cfg, fetcher, conn, run_date, now_iso)
+        if v3_section:
+            sections.append(v3_section)
 
     report_path = write_daily_report(run_date, sections, cfg["paths"]["reports_dir"])
     logger.info("report written to %s", report_path)

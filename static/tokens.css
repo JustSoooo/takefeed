@@ -341,6 +341,7 @@ table.data-table tr:last-child td { border-bottom: none; }
 
 .pct-positive { color: var(--risk-on); }
 .pct-negative { color: var(--risk-off); }
+.pct-neutral { color: var(--neutral); }
 
 /* -------------------------------------------------------------- chart */
 
