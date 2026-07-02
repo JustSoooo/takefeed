@@ -1,45 +1,98 @@
 """financial-service 期权数据源（首选实现，guidebook 5.6）。
 
-【接入状态：待补全】本文件目前是结构完整的骨架：接口签名、配置读取、错误处理模式
-都已按 OptionsFetcher 契约就位，但 financial-service 的 API 文档（base_url、认证方式、
-期权链端点、字段名）尚未提供，无法凭空编造请求格式——那会产出看起来能跑、
-实际字段全错的代码。
+financial-service 是安装在使用者本地 Claude Code 里的 Anthropic 金融分析 skill——
+它不是 HTTP 服务，无法被本 Python 管道直接调用。因此本实现采用**快照文件契约**：
 
-接入时需要补全的三处（搜索 TODO(financial-service)）：
-1. _request(): 实际的 HTTP 调用（端点路径、认证 header/参数、分页方式）
-2. get_chain(): 服务返回的 JSON -> OptionQuote 的字段映射
-   （合约代码/到期日/行权价/买卖价/成交量/OI/IV 分别叫什么、IV 是小数还是百分比）
-3. get_risk_free_rate(): 若服务提供利率曲线端点则用之，否则删掉此覆写、
-   沿用 yfinance ^IRX 的实现
+  1. 在本地 Claude Code 会话中，让 Claude 用 financial-service skill 拉取期权链，
+     按 docs/financial_service_snapshot.md 定义的 JSON schema 写入
+     data/options_snapshots/<SYMBOL>.json
+  2. 本 fetcher 读取该文件并做两道硬校验：schema 完整性 + 新鲜度
+     （fetched_at 距今超过 max_age_hours 直接拒绝——过期期权数据比没有更危险，
+     绝不静默用旧快照冒充实时数据）
 
-补全后把 config.yaml 里 v5.financial_service.base_url 填上即可生效，
-上层代码零改动（工厂函数在 options_base.get_options_fetcher）。
+生成快照的提示词示例见 docs/financial_service_snapshot.md。
 """
-import os
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
 
 from core.fetchers.base import FetchResult
-from core.fetchers.options_base import OptionsFetcher
+from core.fetchers.options_base import (FinancialServiceUnavailable, OptionChainData,
+                                        OptionQuote, OptionsFetcher)
+
+logger = logging.getLogger(__name__)
+
+_REQUIRED_QUOTE_FIELDS = {"kind", "expiry", "strike", "volume", "open_interest"}
 
 
 class FinancialServiceOptionsFetcher(OptionsFetcher):
     def __init__(self, fs_cfg: dict, fetch_cfg: dict):
-        self.base_url = (fs_cfg.get("base_url") or "").strip()
-        self.api_key = os.environ.get(fs_cfg.get("api_key_env", "FINANCIAL_SERVICE_API_KEY"), "")
-        self.fetch_cfg = fetch_cfg
-        if not self.base_url:
-            raise NotImplementedError(
-                "financial-service 尚未接入：config v5.financial_service.base_url 为空，"
-                "且客户端的请求/字段映射待 API 文档提供后补全（见本文件头部说明）"
-            )
-        if not self.api_key:
-            raise NotImplementedError(
-                f"financial-service 未配置认证：环境变量 {fs_cfg.get('api_key_env')} 为空"
-            )
+        self.snapshot_dir = Path(fs_cfg.get("snapshot_dir") or "")
+        self.max_age_hours = fs_cfg.get("max_age_hours", 24)
+        self._last_rate: float | None = None
+        if not str(self.snapshot_dir):
+            raise FinancialServiceUnavailable(
+                "financial-service 快照目录未配置（config v5.financial_service.snapshot_dir）")
+        if not self.snapshot_dir.is_dir():
+            raise FinancialServiceUnavailable(
+                f"financial-service 快照目录不存在：{self.snapshot_dir}。"
+                f"请在本地 Claude Code 中用 financial-service skill 生成快照"
+                f"（方法见 docs/financial_service_snapshot.md），或改用 provider: yfinance")
 
     def get_chain(self, symbol: str, max_expiries: int = 8) -> FetchResult:
-        # TODO(financial-service): 实现期权链拉取与字段映射 -> OptionChainData
-        raise NotImplementedError("financial-service get_chain 待 API 文档提供后实现")
+        path = self.snapshot_dir / f"{symbol.upper()}.json"
+        if not path.exists():
+            return FetchResult(ok=False, error=(
+                f"{symbol}: 快照文件不存在（{path}）。请在本地 Claude Code 会话中用 "
+                f"financial-service skill 生成，提示词模板见 docs/financial_service_snapshot.md"))
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            return FetchResult(ok=False, error=f"{symbol}: 快照文件解析失败（{exc}）")
+
+        for key in ("symbol", "spot", "fetched_at", "quotes"):
+            if key not in payload:
+                return FetchResult(ok=False, error=f"{symbol}: 快照缺少必需字段 '{key}'，schema 见文档")
+        if payload["symbol"].upper() != symbol.upper():
+            return FetchResult(ok=False, error=f"{symbol}: 快照文件 symbol 不匹配（{payload['symbol']}）")
+
+        try:
+            fetched_at = datetime.fromisoformat(str(payload["fetched_at"]).replace("Z", "+00:00"))
+        except ValueError:
+            return FetchResult(ok=False, error=f"{symbol}: fetched_at 不是合法的 ISO 时间戳")
+        age_hours = (datetime.now(timezone.utc) - fetched_at).total_seconds() / 3600
+        if age_hours > self.max_age_hours:
+            return FetchResult(ok=False, error=(
+                f"{symbol}: 快照已过期（{age_hours:.1f} 小时前生成，上限 {self.max_age_hours} 小时）。"
+                f"过期期权数据不可用于估值，请重新生成快照"))
+
+        quotes = []
+        for i, q in enumerate(payload["quotes"]):
+            missing = _REQUIRED_QUOTE_FIELDS - set(q)
+            if missing:
+                return FetchResult(ok=False, error=f"{symbol}: quotes[{i}] 缺少字段 {sorted(missing)}")
+            if q["kind"] not in ("call", "put"):
+                return FetchResult(ok=False, error=f"{symbol}: quotes[{i}].kind 必须是 call|put")
+            quotes.append(OptionQuote(
+                contract_symbol=q.get("contract_symbol", f"{symbol}-{q['expiry']}-{q['strike']}-{q['kind']}"),
+                kind=q["kind"], expiry=q["expiry"], strike=float(q["strike"]),
+                bid=q.get("bid"), ask=q.get("ask"), last=q.get("last"),
+                volume=int(q["volume"]), open_interest=int(q["open_interest"]),
+                iv=q.get("iv"),
+            ))
+        if not quotes:
+            return FetchResult(ok=False, error=f"{symbol}: 快照 quotes 为空")
+
+        expiries = sorted({q.expiry for q in quotes})[:max_expiries]
+        quotes = [q for q in quotes if q.expiry in set(expiries)]
+        self._last_rate = payload.get("risk_free_rate")
+
+        return FetchResult(ok=True, data=OptionChainData(
+            symbol=symbol.upper(), spot=float(payload["spot"]),
+            fetched_at=payload["fetched_at"], expiries=expiries, quotes=quotes))
 
     def get_risk_free_rate(self) -> FetchResult:
-        # TODO(financial-service): 若服务提供利率曲线则在此实现
-        raise NotImplementedError("financial-service get_risk_free_rate 待 API 文档提供后实现")
+        if self._last_rate is not None:
+            return FetchResult(ok=True, data=float(self._last_rate))
+        return FetchResult(ok=False, error="快照未提供 risk_free_rate 字段")

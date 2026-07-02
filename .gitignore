@@ -5,6 +5,7 @@ venv/
 .env
 db/*.sqlite
 db/*.sqlite-journal
+data/options_snapshots/*.json
 output/reports/*.md
 output/site/*.html
 output/site/tokens.css

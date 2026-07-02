@@ -26,12 +26,13 @@
 
 ## V5 期权数据源说明
 
-guidebook 指定 financial-service 为首选数据源、yfinance 为降级源。抽象接口
-（`core/fetchers/options_base.py`）和 yfinance 实现已完整可用；financial-service 客户端
-（`core/fetchers/options_financial_service.py`）是结构就位的骨架，**等待该服务的 API 文档
-（base_url、认证方式、字段映射）后补全**，补全后填入 `config.yaml` 的
-`v5.financial_service.base_url` 即可切换，上层代码零改动。`v5.allow_fallback: true` 时
-financial-service 不可用会显式告警后降级 yfinance，设为 `false` 则直接报错，绝不静默换源。
+guidebook 指定 financial-service 为首选数据源、yfinance 为降级源。financial-service 是
+本地 Claude Code 里的 Anthropic 金融分析 skill（非 HTTP 服务），因此采用**快照文件契约**
+对接：在本地 Claude Code 会话中让 Claude 用该 skill 按
+[docs/financial_service_snapshot.md](docs/financial_service_snapshot.md) 的 schema 生成
+`data/options_snapshots/<SYMBOL>.json`（文档里有可直接粘贴的提示词），管道读文件并强制
+校验 schema 与新鲜度（默认超过 24 小时拒用）。快照目录不存在且 `v5.allow_fallback: true`
+时显式告警后降级 yfinance，设为 `false` 则直接报错，绝不静默换源。
 
 ```bash
 # 期权链 + 推荐矩阵
