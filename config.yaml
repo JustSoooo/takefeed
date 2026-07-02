@@ -85,6 +85,17 @@ v3:
   upgrades_downgrades_lookback_days: 30
   earnings_soon_threshold_days: 5
 
+v4:
+  price_history_period: "6mo"  # 需覆盖 MA 计算 + 90日波动率窗口
+  ma_windows: [20, 50]           # 均线突破/跌破规则（收盘确认，非盘中，guidebook 5.2）
+  volume_spike_multiplier: 2.0
+  volume_lookback_days: 30
+  return_std_window: 90
+  return_std_multiplier: 2.0
+  news_spike_multiplier: 3.0
+  news_spike_lookback_days: 30
+  news_spike_min_history: 10   # 样本不足时跳过该规则而非报假警
+
 fetcher:
   max_retries: 3
   backoff_base_seconds: 2

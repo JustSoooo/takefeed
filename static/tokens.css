@@ -307,6 +307,11 @@ main {
   color: var(--risk-off);
 }
 
+.state-note.info-note {
+  border-color: var(--neutral);
+  color: var(--neutral);
+}
+
 /* --------------------------------------------------------------- tables */
 
 table.data-table {
