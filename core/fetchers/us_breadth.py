@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.fetchers.base import FetchResult
-from core.fetchers.us_market import USMarketFetcher
+from core.fetchers.us_market import USMarketFetcher, extract_symbol_close
 
 CONSTITUENTS_DIR = Path(__file__).parent
 
@@ -16,15 +16,6 @@ def load_constituents(universe: str = "dow30") -> list[str]:
     path = CONSTITUENTS_DIR / f"constituents_{universe}.txt"
     lines = path.read_text(encoding="utf-8").splitlines()
     return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
-
-
-def _extract_close(multi_df: pd.DataFrame, symbol: str) -> pd.Series | None:
-    try:
-        if isinstance(multi_df.columns, pd.MultiIndex):
-            return multi_df[symbol]["Close"].dropna()
-        return multi_df["Close"].dropna()
-    except (KeyError, TypeError):
-        return None
 
 
 def compute_breadth_series(fetcher: USMarketFetcher, symbols: list[str], lookback_period: str = "2y") -> FetchResult:
@@ -37,7 +28,7 @@ def compute_breadth_series(fetcher: USMarketFetcher, symbols: list[str], lookbac
 
     closes = {}
     for sym in symbols:
-        s = _extract_close(res.data, sym)
+        s = extract_symbol_close(res.data, sym)
         if s is not None and len(s) > 200:
             closes[sym] = s
     if len(closes) < max(5, len(symbols) // 2):

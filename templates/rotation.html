@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}行业轮动追踪 · 监控 & 选股平台{% endblock %}
+{% block content %}
+
+{% if is_sample_data %}
+  <div class="section">
+    <span class="sample-data-tag">示例数据 · 非实时</span>
+  </div>
+{% endif %}
+
+<section class="section">
+  <div class="section-label">结论 · 当前最强板块（按近1月超额收益排名，基准 {{ benchmark }}）</div>
+  <div class="dim-grid">
+    {% for row in sector_rows %}
+      {% if row.rank_mid <= 3 %}
+      <div class="dim-card">
+        <div class="dim-card-head">
+          <span class="dim-name">#{{ row.rank_mid }} {{ row.name }}（{{ row.symbol }}）</span>
+          <span class="dim-score {{ row.excess_mid_class }}">{{ row.excess_mid_str }}</span>
+        </div>
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>风格</span><span>{{ row.style_label }}</span></div>
+          <div class="dim-detail-row"><span>近1周排名</span><span>#{{ row.rank_short }}</span></div>
+          <div class="dim-detail-row"><span>近3月排名</span><span>#{{ row.rank_long }}</span></div>
+          <div class="dim-detail-row"><span>持续性（近1月排名前3命中率）</span><span>{{ row.persistence_str }}</span></div>
+        </div>
+        {% if row.persistent_strong %}
+        <div class="state-badge aggressive" style="margin-top: var(--space-3);">持续强势</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-label">明细 · 板块相对强弱矩阵（相对 {{ benchmark }} 超额收益）</div>
+  <div class="chart-wrap">
+    <canvas id="matrixChart" height="90"></canvas>
+  </div>
+  <table class="data-table" style="margin-top: var(--space-4);">
+    <thead>
+      <tr>
+        <th>板块</th><th>代码</th><th>风格</th>
+        <th>近1周超额</th><th>近1月超额</th><th>近3月超额</th><th>持续性</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in sector_rows %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td>{{ row.symbol }}</td>
+        <td>{{ row.style_label }}</td>
+        <td class="{{ row.excess_short_class }}">{{ row.excess_short_str }}（#{{ row.rank_short }}）</td>
+        <td class="{{ row.excess_mid_class }}">{{ row.excess_mid_str }}（#{{ row.rank_mid }}）</td>
+        <td class="{{ row.excess_long_class }}">{{ row.excess_long_str }}（#{{ row.rank_long }}）</td>
+        <td>{{ row.persistence_str }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="section">
+  <div class="section-label">明细 · 强势板块内部健康度（普涨还是靠少数权重股拉动）</div>
+  {% if health_rows %}
+  <div class="dim-grid">
+    {% for row in health_rows %}
+    <div class="dim-card {{ 'is-empty' if row.status == 'missing' else '' }}">
+      <div class="dim-card-head">
+        <span class="dim-name">{{ row.name }}（{{ row.symbol }}）</span>
+      </div>
+      {% if row.status == 'ok' %}
+        <div class="dim-detail">
+          <div class="dim-detail-row"><span>前{{ row.holdings_counted }}大持仓近1月上涨占比</span><span>{{ row.pct_holdings_up_str }}</span></div>
+          <div class="dim-detail-row"><span>前3大持仓权重占比</span><span>{{ row.top3_weight_str }}</span></div>
+        </div>
+        {% if row.concentrated %}
+        <div class="state-note error-note" style="margin-top: var(--space-3);">集中度偏高，普涨判断需谨慎</div>
+        {% endif %}
+      {% else %}
+        <div class="state-note error-note">该维度今日数据缺失：{{ row.note }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="state-note">暂无强势板块内部健康度数据</div>
+  {% endif %}
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  const matrixData = {{ chart_json | safe }};
+  const ctx = document.getElementById('matrixChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: matrixData.labels,
+        datasets: [{
+          label: '近1月超额收益 % (vs {{ benchmark }})',
+          data: matrixData.excess_mid,
+          backgroundColor: matrixData.excess_mid.map(v => v >= 0 ? '#3ddc84' : '#ff5c5c'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b93a1', font: { family: 'IBM Plex Mono' } }, grid: { color: '#1f242e' } },
+          y: { ticks: { color: '#e8eaed', font: { family: 'Inter' } }, grid: { display: false } },
+        },
+        animation: { duration: 0 },
+      }
+    });
+  }
+</script>
+
+{% endblock %}
