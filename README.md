@@ -48,7 +48,7 @@ python run_options.py --symbol NVDA --expected-price 210 --expected-date 2026-08
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-export ANTHROPIC_API_KEY=sk-ant-...   # 叙事层需要；未设置时打分和图表仍会生成
+export ZHIPU_API_KEY=...   # 叙事层需要（智谱 GLM）；未设置时打分和图表仍会生成
 
 python run_daily.py
 ```

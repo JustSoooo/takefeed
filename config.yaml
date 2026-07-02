@@ -4,8 +4,9 @@
 
 market: us   # us | cn（cn 为二期，当前未实现）
 
-anthropic:
-  model: claude-sonnet-5
+llm:
+  provider: zhipu   # GLM，OpenAI 兼容的 chat/completions 接口，见 core/narrative/generate.py
+  model: glm-5.2
   max_tokens: 1024
 
 # 11个 SPDR 板块 ETF，V1（板块轮动维度）和 V2（轮动追踪模块）共用同一份清单
@@ -97,15 +98,11 @@ v4:
   news_spike_min_history: 10   # 样本不足时跳过该规则而非报假警
 
 v5:
-  # 期权数据源。首选 financial_service（guidebook 5.6）——它是本地 Claude Code 里的
-  # Anthropic 金融分析 skill，不是 HTTP 服务，因此采用快照文件契约：在本地 Claude Code
-  # 会话中用该 skill 按 docs/financial_service_snapshot.md 的 schema 生成
-  # <snapshot_dir>/<SYMBOL>.json，本管道读文件并校验新鲜度（超过 max_age_hours 拒用，
-  # 过期期权数据比没有更危险）。
-  # allow_fallback: true 时，快照目录不存在会显式告警并降级 yfinance；
-  # 设为 false 则直接报错停止，绝不静默换源。单个标的快照缺失/过期不触发降级，
-  # 而是明确报错并给出生成指引。
-  provider: financial_service
+  # 期权数据源。financial_service（guidebook 5.6）依赖本地 Claude Code 手动生成快照
+  # 文件（见 docs/financial_service_snapshot.md），目前没有可用快照、也没有对应技能
+  # 自动抓取期权链数据，暂时改回 yfinance 全自动运行。等 financial_service 真正可用
+  # 时把 provider 改回 financial_service 即可，其余代码不用动。
+  provider: yfinance
   allow_fallback: true
   financial_service:
     snapshot_dir: "data/options_snapshots"

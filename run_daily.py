@@ -51,7 +51,7 @@ def run_v1(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
     composite_score, state, weights_used = v1.compute_composite(dim_results, v1_cfg["weights"], v1_cfg["state_thresholds"])
     logger.info("V1 composite score = %.1f (%s)", composite_score, state)
 
-    narrative_data = generate_v1_narrative(composite_score, state, dim_results, weights_used, cfg["anthropic"])
+    narrative_data = generate_v1_narrative(composite_score, state, dim_results, weights_used, cfg["llm"])
     dbmod.upsert_composite(conn, run_date, "v1", composite_score, state, weights_used,
                             narrative_data.get("narrative"), narrative_data.get("suggestions"), now_iso)
 
@@ -124,7 +124,7 @@ def run_v3(cfg: dict, fetcher: USMarketFetcher, conn, run_date: str, now_iso: st
         card = build_stock_card(fetcher, entry, cfg["v3"], cfg["fetcher"])
 
         if card["news"].status == "ok" and card["news"].raw:
-            sentiment = classify_news_sentiment(card["symbol"], card["news"].raw, cfg["anthropic"])
+            sentiment = classify_news_sentiment(card["symbol"], card["news"].raw, cfg["llm"])
             card["sentiment_items"] = sentiment["items"]
         else:
             card["sentiment_items"] = []

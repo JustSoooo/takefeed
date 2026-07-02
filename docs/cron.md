@@ -19,7 +19,7 @@
 ## 运行前准备
 
 1. `pip install -r requirements.txt`
-2. 配置环境变量 `ANTHROPIC_API_KEY`（叙事层需要；未配置时仍会生成打分和图表，仅叙事段落降级为提示文字）
+2. 配置环境变量 `ZHIPU_API_KEY`（叙事层需要，接入智谱 GLM；未配置时仍会生成打分和图表，仅叙事段落降级为提示文字）
 3. 首次运行前确认能访问 Yahoo Finance（yfinance 数据源）与 AAII / CNN 页面（情绪抓取），
    部分网络环境（如企业代理、部分云 CI）会拦截这些域名，需要在允许出站访问的机器上运行
 4. `output/site/` 是可直接部署到 GitHub Pages / Vercel 的静态站点目录，无需后端服务

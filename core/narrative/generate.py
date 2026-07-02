@@ -1,22 +1,44 @@
-"""Claude API 叙事层：V1 把结构化打分翻译成中文判断段落（LLM 只做文字转述，
+"""LLM 叙事层：V1 把结构化打分翻译成中文判断段落（LLM 只做文字转述，
 不做任何数字计算），V3 把抓到的新闻标题分类为利多/利空/中性（LLM 唯一被允许
 做的"判断"，且原始标题永远由代码本地拼回、不依赖模型复述，见 guidebook 0 / 4.2）。
 
-所有 Claude API 调用集中在本文件，便于控制成本和更换模型（guidebook 6.2）。
+所有 LLM 调用集中在本文件，便于控制成本和更换模型（guidebook 6.2）。
+当前接入智谱 GLM（OpenAI 兼容的 chat/completions 接口）。
 """
 import json
 import logging
 import os
 
+import requests
+
 logger = logging.getLogger(__name__)
 
+_ZHIPU_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
-def _get_client():
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    import anthropic
-    return anthropic.Anthropic(api_key=api_key)
+
+def _get_api_key():
+    return os.environ.get("ZHIPU_API_KEY")
+
+
+def _chat(api_key: str, model: str, max_tokens: int, system_prompt: str, user_prompt: str) -> str:
+    """thinking 强制关闭：本层只做"结构化数字/标题 -> 固定格式文字"的转述，不需要模型推理，
+    GLM-5.2 默认开启的思考会占用 max_tokens 预算，导致输出被截断成空字符串。"""
+    resp = requests.post(
+        _ZHIPU_ENDPOINT,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": model,
+            "max_tokens": max_tokens,
+            "thinking": {"type": "disabled"},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
 _SYSTEM_PROMPT = """你是一名量化研究助理，为一名有多年实盘经验的个人投资者撰写每日市场风险偏好简报。
 你收到的六维度打分是已经计算好的确定性结果，你的任务只是把这些结构化数字转译成中文叙述，
@@ -65,23 +87,23 @@ def generate_v1_narrative(composite_score, state, dim_results: dict, weights: di
             "missing_reason": (d.note if hasattr(d, "note") else d.get("note")) if status == "missing" else None,
         }
 
-    client = _get_client()
-    if client is None:
-        logger.warning("ANTHROPIC_API_KEY not set; skipping narrative generation")
+    api_key = _get_api_key()
+    if api_key is None:
+        logger.warning("ZHIPU_API_KEY not set; skipping narrative generation")
         return {
-            "narrative": "叙事生成不可用：未配置 ANTHROPIC_API_KEY。以下为结构化打分结果，"
+            "narrative": "叙事生成不可用：未配置 ZHIPU_API_KEY。以下为结构化打分结果，"
                          "请人工参考各维度数据自行判断。",
             "suggestions": [],
         }
 
     try:
-        resp = client.messages.create(
-            model=cfg.get("model", "claude-sonnet-5"),
+        text = _chat(
+            api_key,
+            model=cfg.get("model", "glm-4.6"),
             max_tokens=cfg.get("max_tokens", 1024),
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _build_user_prompt(composite_score, state, dim_payload, weights)}],
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=_build_user_prompt(composite_score, state, dim_payload, weights),
         )
-        text = resp.content[0].text.strip()
         parsed = json.loads(text)
         if "narrative" not in parsed or "suggestions" not in parsed:
             raise ValueError("Claude response missing required keys")
@@ -117,24 +139,24 @@ def classify_news_sentiment(symbol: str, headlines: list[dict], cfg: dict) -> di
     if not headlines:
         return {"items": [], "note": "近期无相关新闻"}
 
-    client = _get_client()
-    if client is None:
+    api_key = _get_api_key()
+    if api_key is None:
         return {
-            "items": [{**h, "label": "未分类", "reason": "未配置 ANTHROPIC_API_KEY"} for h in headlines],
-            "note": "舆情分类不可用：未配置 ANTHROPIC_API_KEY",
+            "items": [{**h, "label": "未分类", "reason": "未配置 ZHIPU_API_KEY"} for h in headlines],
+            "note": "舆情分类不可用：未配置 ZHIPU_API_KEY",
         }
 
     numbered = "\n".join(f"{i + 1}. {h['title']}（来源: {h.get('publisher') or '未知'}）" for i, h in enumerate(headlines))
     prompt = f"股票代码: {symbol}\n新闻标题列表:\n{numbered}\n\n{_NEWS_OUTPUT_SCHEMA_HINT}"
 
     try:
-        resp = client.messages.create(
-            model=cfg.get("model", "claude-sonnet-5"),
+        text = _chat(
+            api_key,
+            model=cfg.get("model", "glm-4.6"),
             max_tokens=cfg.get("max_tokens", 1024),
-            system=_NEWS_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+            system_prompt=_NEWS_SYSTEM_PROMPT,
+            user_prompt=prompt,
         )
-        text = resp.content[0].text.strip()
         labels = json.loads(text)
         by_index = {item["index"]: item for item in labels if "index" in item}
 

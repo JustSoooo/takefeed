@@ -1,6 +1,6 @@
 """Unit tests for V3 (stock scorecards): rendering and report-section building
 with synthetic Block data, plus the news-classification fallback path when no
-ANTHROPIC_API_KEY is configured. Live yfinance fetchers are exercised manually
+ZHIPU_API_KEY is configured. Live yfinance fetchers are exercised manually
 against real network access -- see docs/cron.md.
 """
 import os
@@ -14,7 +14,7 @@ from core.render.render_v3 import build_v3_report_section, render_v3_dashboard
 from core.render.report import write_daily_report
 from core.scoring.v3_stock_card import Block, serialize_card
 
-ANTHROPIC_CFG = {"model": "claude-sonnet-5", "max_tokens": 512}
+LLM_CFG = {"model": "glm-4.6", "max_tokens": 512}
 
 
 def _sample_card():
@@ -54,16 +54,16 @@ def test_serialize_card_is_json_safe():
 
 
 def test_classify_news_sentiment_without_api_key_degrades_gracefully(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ZHIPU_API_KEY", raising=False)
     headlines = [{"title": "Example headline", "publisher": "Wire", "link": None, "published_at": None}]
-    result = classify_news_sentiment("AAPL", headlines, ANTHROPIC_CFG)
+    result = classify_news_sentiment("AAPL", headlines, LLM_CFG)
     assert len(result["items"]) == 1
     assert result["items"][0]["title"] == "Example headline"  # original title preserved verbatim
     assert result["items"][0]["label"] == "未分类"
 
 
 def test_classify_news_sentiment_empty_headlines():
-    result = classify_news_sentiment("AAPL", [], ANTHROPIC_CFG)
+    result = classify_news_sentiment("AAPL", [], LLM_CFG)
     assert result["items"] == []
 
 
